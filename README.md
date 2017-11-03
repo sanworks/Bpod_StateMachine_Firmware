@@ -1,5 +1,7 @@
 # Bpod_StateMachine_Firmware
+
 Arduino firmware for Bpod State Machine (all hardware versions)
+
 Firmware version is indicated by the repository branch (i.e. v18)
 
 ***IMPORTANT***
