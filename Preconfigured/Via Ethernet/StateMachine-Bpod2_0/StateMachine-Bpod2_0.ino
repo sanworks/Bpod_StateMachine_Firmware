@@ -36,7 +36,7 @@
 //////////////////////////////////////////
 // 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-0.9 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
 
-#define MACHINE_TYPE 1 
+#define MACHINE_TYPE 3 
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -49,7 +49,7 @@
 // 2 = Bpod for BControl on HW 0.7-0.9 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 1.0 (20,2,20)
 
-#define SM_FEATURE_PROFILE 0
+#define SM_FEATURE_PROFILE 1
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5
@@ -89,7 +89,7 @@
 // Defines the state machine's communication channel to the PC. 0 = USB (default), 1 = Ethernet (w/ Bpod Ethernet Module)
 // IMPORTANT: PC via Ethernet requires State Machine v2.0 or newer.
 
-#define ETHERNET_COM 0
+#define ETHERNET_COM 1
 
 //////////////////////////////////////////
 //          Board configuration          /

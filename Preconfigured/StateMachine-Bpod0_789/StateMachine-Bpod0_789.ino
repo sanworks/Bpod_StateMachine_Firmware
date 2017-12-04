@@ -18,7 +18,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-// Bpod State Machine Firmware Ver. 18
+// Bpod State Machine Firmware Ver. 19
 //
 // SYSTEM SETUP:
 //
@@ -34,67 +34,103 @@
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-0.9 (Arduino Due); 3 = Bpod 1.0.0 (Teensy 3.6)
+// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-0.9 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
 
-#define MachineType 2 
+#define MACHINE_TYPE 2 
 
 //////////////////////////////////////////
-//             Config Profile            /
+//    State Machine Feature Profile      /
 //////////////////////////////////////////
-// A profile of state machine params (max numbers of global timers, counters and conditions). 
+// Profile of internal state machine features (max numbers of global timers, counters and conditions).
+// Declaring more of these requires more MCU sRAM, often in ways that are non-linear. It is safe to add 
+// profiles here to reallocate memory as needed, at the line beginning: #if SM_FEATURE_PROFILE == 0 
 // 0 = Bpod Native on HW 0.5-0.9 (5,5,5)
-// 1 = Bpod Native on HW 1.0 (16,8,16)
+// 1 = Bpod Native on HW 2.0 (16,8,16)
 // 2 = Bpod for BControl on HW 0.7-0.9 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 1.0 (20,2,20)
 
-#define ConfigProfile 0
+#define SM_FEATURE_PROFILE 0
+
+#if SM_FEATURE_PROFILE == 0
+  #define MAX_GLOBAL_TIMERS 5
+  #define MAX_GLOBAL_COUNTERS 5
+  #define MAX_CONDITIONS 5
+#elif SM_FEATURE_PROFILE == 1
+  #define MAX_GLOBAL_TIMERS 16
+  #define MAX_GLOBAL_COUNTERS 8
+  #define MAX_CONDITIONS 16
+#elif SM_FEATURE_PROFILE == 2
+  #define MAX_GLOBAL_TIMERS 8
+  #define MAX_GLOBAL_COUNTERS 2
+  #define MAX_CONDITIONS 8
+#elif SM_FEATURE_PROFILE == 3
+  #define MAX_GLOBAL_TIMERS 20
+  #define MAX_GLOBAL_COUNTERS 2
+  #define MAX_CONDITIONS 20
+#endif
 
 //////////////////////////////////////////
 //          Set Firmware Version         /
 //////////////////////////////////////////
-// Current firmware version (single firmware file, compiles for MachineTypes set above)
+// Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FirmwareVersion 18
+#define FIRMWARE_VERSION 19
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
 //////////////////////////////////////////
-// 0 to return timestamps after trial, 1 to return timestamps as events happen 
+// 0 to return timestamps after trial, 1 to return timestamps during trial along with event byte-codes 
 
-#define LiveTimestamps 1
+#define LIVE_TIMESTAMPS 1
+
+//////////////////////////////////////////
+//    Ethernet Communication Option      /
+//////////////////////////////////////////
+// Defines the state machine's communication channel to the PC. 0 = USB (default), 1 = Ethernet (w/ Bpod Ethernet Module)
+// IMPORTANT: PC via Ethernet requires State Machine v2.0 or newer.
+
+#define ETHERNET_COM 0
 
 //////////////////////////////////////////
 //          Board configuration          /
 //////////////////////////////////////////
 
 // Board configuration (universal)
-#define useStatusLED 1 // Set to 0 to disable the board's red/green/blue status LED
+#define STATUS_LED_ENABLED 1 // Set to 0 to disable the board's red/green/blue status LED
 
 // Board configuration (machine-specific)
-#if MachineType < 3
+#if MACHINE_TYPE < 3
   #include "DueTimer.h"
 #endif
 #include <SPI.h>
 #include "ArCOM.h" // ArCOM is a serial interface wrapper developed by Sanworks, 
                    // to streamline transmission of datatypes and arrays over USB and UART
-#define SERIAL_TX_BUFFER_SIZE 256
-#define SERIAL_RX_BUFFER_SIZE 256
-#if MachineType == 1
-  ArCOM USBCOM(SerialUSB); // Creates an ArCOM object called USBCOM, wrapping SerialUSB
-  ArCOM Serial1COM(Serial1); // Creates an ArCOM object called Serial1COM, wrapping Serial1
-  ArCOM Serial2COM(Serial2); 
-#elif MachineType == 2
-  ArCOM USBCOM(SerialUSB); 
-  ArCOM Serial1COM(Serial1); 
-  ArCOM Serial2COM(Serial2); 
-  ArCOM Serial3COM(Serial3);
-#elif MachineType == 3
-  ArCOM USBCOM(Serial); // Creates an ArCOM object called USBCOM, wrapping Serial (for Teensy 3.6)
-  ArCOM Serial1COM(Serial1); // Creates an ArCOM object called Serial1COM, wrapping Serial1
-  ArCOM Serial2COM(Serial3); 
-  ArCOM Serial3COM(Serial2); 
-  ArCOM Serial4COM(Serial4); 
-  ArCOM Serial5COM(Serial5); 
+#if ETHERNET_COM == 1
+  #include "ArCOMvE.h" // Special variant of ArCOM specialized for transmission via Bpod Ethernet module
+#endif
+
+#if MACHINE_TYPE == 1
+  ArCOM PC(SerialUSB); // Creates an ArCOM object called PC, wrapping SerialUSB (or in some cases, a different serial channel with an Ethernet link to the PC)
+  ArCOM Module1(Serial1); // Creates an ArCOM object called Module1, wrapping Serial1
+  ArCOM Module2(Serial2); 
+#elif MACHINE_TYPE == 2
+  ArCOM PC(SerialUSB); 
+  ArCOM Module1(Serial1); 
+  ArCOM Module2(Serial2);
+  ArCOM Module3(Serial3);
+#elif MACHINE_TYPE == 3
+  #if ETHERNET_COM == 0 
+    ArCOM PC(SerialUSB); 
+  #else
+    ArCOMvE PC(Serial5); // Creates an ArCOM object called PC, wrapping Serial (for Teensy 3.6)
+  #endif
+  ArCOM Module1(Serial1); // Creates an ArCOM object called Module1, wrapping Serial1
+  ArCOM Module2(Serial3); 
+  ArCOM Module3(Serial2); 
+  ArCOM Module4(Serial4); 
+  #if ETHERNET_COM == 0 
+    ArCOM Module5(Serial5); 
+  #endif
 #endif
 
 ////////////////////////////////////////
@@ -106,91 +142,82 @@
 // The digital,BNC or wire channel currently replaced by 'Y' is the sync channel (none by default).
 // The second row lists the physical input and output channels on Arduino for B,W,P, and the SPI CS pin is listed for S. Use 0 for UART and USB.
 
-#if MachineType == 1 // Bpod state machine v0.5
+#if MACHINE_TYPE == 1 // Bpod state machine v0.5
     byte InputHW[] = {'U','U','X','B','B','W','W','W','W','P','P','P','P','P','P','P','P'};
     byte InputCh[] = {0,0,0,11,10,35,33,31,29,28,30,32,34,36,38,40,42};                                         
     byte OutputHW[] = {'U','U','X','B','B','W','W','W','W','P','P','P','P','P','P','P','P','V','V','V','V','V','V','V','V'};
     byte OutputCh[] = {0,0,0,25,24,43,41,39,37,9,8,7,6,5,4,3,2,22,22,22,22,22,22,22,22};   
-#elif MachineType == 2 // Bpod State Machine r0.7+
+#elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
     byte InputHW[] = {'U','U','U','X','B','B','W','W','P','P','P','P','P','P','P','P'};
     byte InputCh[] = {0,0,0,0,10,11,31,29,28,30,32,34,36,38,40,42};                                         
     byte OutputHW[] = {'U','U','U','X','B','B','W','W','W','P','P','P','P','P','P','P','P','V','V','V','V','V','V','V','V'};
     byte OutputCh[] = {0,0,0,0,25,24,43,41,39,9,8,7,6,5,4,3,2,22,22,22,22,22,22,22,22};  
-#elif MachineType == 3 // Bpod State Machine r2.0+
+#elif MACHINE_TYPE == 3 // Bpod State Machine r2.0+
+  #if ETHERNET_COM == 0
     byte InputHW[] = {'U','U','U','U','U','X','B','B','P','P','P','P'};
     byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
     byte OutputHW[] = {'U','U','U','U','U','X','B','B','P','P','P','P','V','V','V','V'};
     byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21};  
+  #else
+    byte InputHW[] = {'U','U','U','U','X','B','B','P','P','P','P'};
+    byte InputCh[] = {0,0,0,0,0,6,5,39,38,18,15};                                         
+    byte OutputHW[] = {'U','U','U','U','X','B','B','P','P','P','P','V','V','V','V'};
+    byte OutputCh[] = {0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
+  #endif
 #endif
 
 // State machine meta information
 const byte nInputs = sizeof(InputHW);
 const byte nOutputs = sizeof(OutputHW);
-#if MachineType == 1 // State machine (Bpod 0.5)
+#if MACHINE_TYPE == 1 // State machine (Bpod 0.5)
   const byte nSerialChannels = 3; // Must match total of 'U' and 'X' in InputHW (above)
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
   const int SerialBaudRate = 115200;
-  const int maxSerialBaudRate = 115200;
-#elif MachineType == 2 // Bpod State Machine r0.7+
+#elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
   const byte nSerialChannels = 4; 
-  const byte maxSerialEvents = 60; 
+  const byte maxSerialEvents = 60;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
-  const int maxSerialBaudRate = 2625000;
-#elif MachineType == 3  // Teensy 3.6 based state machines (r1.0.0+)
-  const byte nSerialChannels = 6; 
-  const byte maxSerialEvents = 90;
+#elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0+)
+  #if ETHERNET_COM == 0
+    const byte nSerialChannels = 6; 
+    const byte maxSerialEvents = 90;
+  #else
+    const byte nSerialChannels = 5; 
+    const byte maxSerialEvents = 75;
+  #endif
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
-  const int maxSerialBaudRate = 7372800;
-#endif
-
-#if ConfigProfile == 0
-  #define nGlobalTimers 5
-  #define nGlobalCounters 5
-  #define nConditions 5
-#elif ConfigProfile == 1
-  #define nGlobalTimers 16
-  #define nGlobalCounters 8
-  #define nConditions 16
-#elif ConfigProfile == 2
-  #define nGlobalTimers 8
-  #define nGlobalCounters 2
-  #define nConditions 8
-#elif ConfigProfile == 3
-  #define nGlobalTimers 20
-  #define nGlobalCounters 2
-  #define nConditions 20
 #endif
 
 uint16_t timerPeriod = 100; // Hardware timer period, in microseconds (state machine refresh period)
 
-#if nGlobalTimers > 16
-  #define globalTimerByteWidth 4
-#elif nGlobalTimers > 8
-  #define globalTimerByteWidth 2
+#if MAX_GLOBAL_TIMERS > 16
+  #define GLOBALTIMER_TRIG_BYTEWIDTH 4
+#elif MAX_GLOBAL_TIMERS > 8
+  #define GLOBALTIMER_TRIG_BYTEWIDTH 2
 #else
-  #define globalTimerByteWidth 1
+  #define GLOBALTIMER_TRIG_BYTEWIDTH 1
 #endif
 
 // Vars to hold number of timers, counters and conditions actually used in the current state matrix
-byte nGlobalTimersUsed = nGlobalTimers;
-byte nGlobalCountersUsed = nGlobalCounters;
-byte nConditionsUsed = nConditions;
+byte nGlobalTimersUsed = MAX_GLOBAL_TIMERS;
+byte nGlobalCountersUsed = MAX_GLOBAL_COUNTERS;
+byte nConditionsUsed = MAX_CONDITIONS;
                          
 // Other hardware pin mapping
-#if MachineType == 1
+#if MACHINE_TYPE == 1
   byte GreenLEDPin = 14;
   byte RedLEDPin = 13;
   byte BlueLEDPin = 12;
   byte valveCSChannel = 22;
-#elif MachineType == 2
+#elif MACHINE_TYPE == 2
   byte GreenLEDPin = 33;
   byte RedLEDPin = 13;
   byte BlueLEDPin = 12;
   byte valveCSChannel = 22;
-#elif MachineType == 3
+#elif MACHINE_TYPE == 3
   byte GreenLEDPin = 2;
   byte RedLEDPin = 36;
   byte BlueLEDPin = 35;
@@ -228,8 +255,8 @@ const unsigned long ModuleIDTimeout = 100; // timeout for modules to respond to 
 
 // Initialize system state vars: 
 byte outputState[nOutputs] = {0}; // State of outputs
-byte inputState[nInputs+nGlobalTimers] = {0}; // Current state of inputs
-byte lastInputState[nInputs+nGlobalTimers] = {0}; // State of inputs on previous cycle
+byte inputState[nInputs+MAX_GLOBAL_TIMERS] = {0}; // Current state of inputs
+byte lastInputState[nInputs+MAX_GLOBAL_TIMERS] = {0}; // State of inputs on previous cycle
 byte inputOverrideState[nInputs] = {0}; // Set to 1 if user created a virtual event, to prevent hardware reads until user returns low
 byte outputOverrideState[nOutputs] = {0}; // Set to 1 when overriding a digital output line. This prevents state changes from affecting the line until it is manually reset.
 byte inputEnabled[nInputs] = {0}; // 0 if input disabled, 1 if enabled
@@ -239,7 +266,7 @@ const byte nDigitalInputs = nInputs - nSerialChannels; // Number of digital inpu
 boolean MatrixFinished = false; // Has the system exited the matrix (final state)?
 boolean MeaningfulStateTimer = false; // Does this state's timer get us to another state when it expires?
 int CurrentState = 1; // What state is the state machine currently in? (State 0 is the final state)
-int NewState = 1;
+int NewState = 1; // State the system determined it needs to enter next. If different from current state, transition logic proceeds.
 int CurrentStateTEMP = 1; // Temporarily holds current state during transition
 // Event vars
 const byte maxCurrentEvents = 10; // Max number of events that can be recorded during a single 100 microsecond cycle
@@ -280,7 +307,7 @@ byte previousState = 0; // Previous state visited. Used if 255 is interpreted as
 int LEDBrightnessAdjustInterval = 5;
 byte LEDBrightnessAdjustDirection = 1;
 byte LEDBrightness = 0;
-byte serialByteBuffer[4] = {0};
+byte serialByteBuffer[4] = {0}; // Stores 1-3 byte messages transmitted as output actions of states
 
 // Vars for state machine definitions. Each matrix relates each state to some inputs or outputs.
 const byte InputMatrixSize = maxSerialEvents + nDigitalInputs*2;
@@ -289,12 +316,12 @@ byte StateTimerMatrix[MaxStates+1] = {0}; // Matrix containing states to move to
 const byte OutputMatrixSize = nOutputs;
 byte OutputStateMatrix[MaxStates+1][OutputMatrixSize] = {0}; // Hardware states for outputs. Serial channels > Digital outputs > Virtual (global timer trigger, global timer cancel, global counter reset)
 byte smGlobalCounterReset[MaxStates+1] = {0}; // For each state, global counter to reset.
-byte GlobalTimerStartMatrix[MaxStates+1][nGlobalTimers] = {0}; // Matrix contatining state transitions for global timer onset events
-byte GlobalTimerEndMatrix[MaxStates+1][nGlobalTimers] = {0}; // Matrix contatining state transitions for global timer elapse events
-byte GlobalCounterMatrix[MaxStates+1][nGlobalCounters] = {0}; // Matrix contatining state transitions for global counter threshold events
-byte ConditionMatrix[MaxStates+1][nConditions] = {0}; // Matrix contatining state transitions for conditions
-boolean GlobalTimersTriggered[nGlobalTimers] = {0}; // 0 if timer x was not yet triggered, 1 if it was triggered and had not elapsed.
-boolean GlobalTimersActive[nGlobalTimers] = {0}; // 0 if timer x is inactive (e.g. not triggered, or during onset delay after trigger), 1 if it's active.
+byte GlobalTimerStartMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer onset events
+byte GlobalTimerEndMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer elapse events
+byte GlobalCounterMatrix[MaxStates+1][MAX_GLOBAL_COUNTERS] = {0}; // Matrix contatining state transitions for global counter threshold events
+byte ConditionMatrix[MaxStates+1][MAX_CONDITIONS] = {0}; // Matrix contatining state transitions for conditions
+boolean GlobalTimersTriggered[MAX_GLOBAL_TIMERS] = {0}; // 0 if timer x was not yet triggered, 1 if it was triggered and had not elapsed.
+boolean GlobalTimersActive[MAX_GLOBAL_TIMERS] = {0}; // 0 if timer x is inactive (e.g. not triggered, or during onset delay after trigger), 1 if it's active.
 byte SerialMessageMatrix[MaxStates+1][nSerialChannels][3]; // Stores a 3-byte serial message for each message byte on each port
 byte SerialMessage_nBytes[MaxStates+1][nSerialChannels] = {1}; // Stores the length of each serial message
 boolean ModuleConnected[nSerialChannels] = {false}; // true for each channel if a module is connected, false otherwise
@@ -302,48 +329,48 @@ byte SyncChannelOriginalType = 0; // Stores sync channel's original hardware typ
 uint32_t PWMChannel[nOutputs] = {0}; // Stores ARM PWM channel for each PWM output pin (assigned in advance in setup, to speed PWM writes)
 
 // Global timer triggers (data type dependent on number of global timers; using fewer = faster SM switching, extra memory for other configs)
-#if globalTimerByteWidth == 1
-  uint8_t GlobalTimerOnsetTriggers[nGlobalTimers] = {0}; // Bits indicate other global timers to trigger when timer turns on (after delay)
+#if GLOBALTIMER_TRIG_BYTEWIDTH == 1
+  uint8_t GlobalTimerOnsetTriggers[MAX_GLOBAL_TIMERS] = {0}; // Bits indicate other global timers to trigger when timer turns on (after delay)
   uint8_t smGlobalTimerTrig[MaxStates+1] = {0}; // For each state, global timers to trigger. Bits indicate timers.
   uint8_t smGlobalTimerCancel[MaxStates+1] = {0}; // For each state, global timers to cancel. Bits indicate timers.
-#elif globalTimerByteWidth == 2
-  uint16_t GlobalTimerOnsetTriggers[nGlobalTimers] = {0};
+#elif GLOBALTIMER_TRIG_BYTEWIDTH == 2
+  uint16_t GlobalTimerOnsetTriggers[MAX_GLOBAL_TIMERS] = {0};
   uint16_t smGlobalTimerTrig[MaxStates+1] = {0};
   uint16_t smGlobalTimerCancel[MaxStates+1] = {0};
-#elif globalTimerByteWidth == 4
-  uint32_t GlobalTimerOnsetTriggers[nGlobalTimers] = {0};
+#elif GLOBALTIMER_TRIG_BYTEWIDTH == 4
+  uint32_t GlobalTimerOnsetTriggers[MAX_GLOBAL_TIMERS] = {0};
   uint32_t smGlobalTimerTrig[MaxStates+1] = {0};
   uint32_t smGlobalTimerCancel[MaxStates+1] = {0};
 #endif
 
 // Positions of input matrix parts
 byte GlobalTimerStartPos = InputMatrixSize; // First global timer event code
-byte GlobalTimerEndPos = GlobalTimerStartPos + nGlobalTimers;
-byte GlobalCounterPos = GlobalTimerEndPos + nGlobalTimers; // First global counter event code
-byte ConditionPos = GlobalCounterPos + nGlobalCounters; // First condition event code
-byte TupPos = ConditionPos+nConditions; // First Jump event code
+byte GlobalTimerEndPos = GlobalTimerStartPos + MAX_GLOBAL_TIMERS;
+byte GlobalCounterPos = GlobalTimerEndPos + MAX_GLOBAL_TIMERS; // First global counter event code
+byte ConditionPos = GlobalCounterPos + MAX_GLOBAL_COUNTERS; // First condition event code
+byte TupPos = ConditionPos+MAX_CONDITIONS; // First Jump event code
 byte DigitalInputPos = maxSerialEvents;
 
 
-byte GlobalTimerChannel[nGlobalTimers] = {254}; // Channel code for global timer onset/offset.
-byte GlobalTimerOnMessage[nGlobalTimers] = {254}; // Message to send when global timer is active (if channel is serial).
-byte GlobalTimerOffMessage[nGlobalTimers] = {254}; // Message to send when global timer elapses (if channel is serial).
-unsigned long GlobalTimerStart[nGlobalTimers] = {0}; // Future Times when active global timers will start measuring time
-unsigned long GlobalTimerEnd[nGlobalTimers] = {0}; // Future Times when active global timers will elapse
-unsigned long GlobalTimers[nGlobalTimers] = {0}; // Timers independent of states
-unsigned long GlobalTimerOnsetDelays[nGlobalTimers] = {0}; // Onset delay following global timer trigger
-unsigned long GlobalTimerLoopIntervals[nGlobalTimers] = {0}; // Configurable delay between global timer loop iterations
-byte GlobalTimerLoop[nGlobalTimers] = {0}; // Number of loop iterations. 0 = no loop. 1 = loop until shut-off. 2-255 = number of loops to execute
-byte GlobalTimerLoopCount[nGlobalTimers] = {0}; // When GlobalTimerLoop > 1, counts the number of loops elapsed
-boolean GTUsingLoopCounter[nGlobalTimers] = {false}; // If this timer's GlobalTimerLoop > 1 (i.e. terminated by loop counter)
-byte SendGlobalTimerEvents[nGlobalTimers] = {0}; // true if events are returned to the state machine (especially useful to disable in loop mode)
-unsigned long GlobalCounterCounts[nGlobalCounters] = {0}; // Event counters
-byte GlobalCounterAttachedEvents[nGlobalCounters] = {254}; // Event each event counter is attached to
-unsigned long GlobalCounterThresholds[nGlobalCounters] = {0}; // Event counter thresholds (trigger events if crossed)
-byte ConditionChannels[nConditions] = {254}; // Event each channel a condition is attached to
-byte ConditionValues[nConditions] = {0}; // The value of each condition
+byte GlobalTimerChannel[MAX_GLOBAL_TIMERS] = {254}; // Channel code for global timer onset/offset.
+byte GlobalTimerOnMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer is active (if channel is serial).
+byte GlobalTimerOffMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer elapses (if channel is serial).
+unsigned long GlobalTimerStart[MAX_GLOBAL_TIMERS] = {0}; // Future Times when active global timers will start measuring time
+unsigned long GlobalTimerEnd[MAX_GLOBAL_TIMERS] = {0}; // Future Times when active global timers will elapse
+unsigned long GlobalTimers[MAX_GLOBAL_TIMERS] = {0}; // Timers independent of states
+unsigned long GlobalTimerOnsetDelays[MAX_GLOBAL_TIMERS] = {0}; // Onset delay following global timer trigger
+unsigned long GlobalTimerLoopIntervals[MAX_GLOBAL_TIMERS] = {0}; // Configurable delay between global timer loop iterations
+byte GlobalTimerLoop[MAX_GLOBAL_TIMERS] = {0}; // Number of loop iterations. 0 = no loop. 1 = loop until shut-off. 2-255 = number of loops to execute
+byte GlobalTimerLoopCount[MAX_GLOBAL_TIMERS] = {0}; // When GlobalTimerLoop > 1, counts the number of loops elapsed
+boolean GTUsingLoopCounter[MAX_GLOBAL_TIMERS] = {false}; // If this timer's GlobalTimerLoop > 1 (i.e. terminated by loop counter)
+byte SendGlobalTimerEvents[MAX_GLOBAL_TIMERS] = {0}; // true if events are returned to the state machine (especially useful to disable in loop mode)
+unsigned long GlobalCounterCounts[MAX_GLOBAL_COUNTERS] = {0}; // Event counters
+byte GlobalCounterAttachedEvents[MAX_GLOBAL_COUNTERS] = {254}; // Event each event counter is attached to
+unsigned long GlobalCounterThresholds[MAX_GLOBAL_COUNTERS] = {0}; // Event counter thresholds (trigger events if crossed)
+byte ConditionChannels[MAX_CONDITIONS] = {254}; // Event each channel a condition is attached to
+byte ConditionValues[MAX_CONDITIONS] = {0}; // The value of each condition
 const int MaxTimestamps = 10000;
-#if MachineType != 2
+#if MACHINE_TYPE != 2
   unsigned long Timestamps[MaxTimestamps] = {0};
 #endif
 unsigned long StateTimers[MaxStates+1] = {0}; // Timers for each state
@@ -372,9 +399,9 @@ int Ev = 0; // Index of current event
 byte overrideChan = 0; // Output channel being manually overridden
 byte overrideChanState = 0; // State of channel being manually overridden
 byte nOverrides = 0; // Number of overrides on a line of the state matrix (for compressed transmission scheme)
-byte col = 0; byte val = 0; // col and val are used in compression scheme
+byte col = 0; byte val = 0; // col and val are used in state matrix compression scheme
 const uint16_t StateMatrixBufferSize = 50000;
-#if MachineType > 1
+#if MACHINE_TYPE > 1
   byte StateMatrixBuffer[StateMatrixBufferSize] = {0}; // Stores next trial's state matrix
 #endif
 const uint16_t SerialRelayBufferSize = 256;
@@ -383,7 +410,7 @@ uint16_t bufferPos = 0;
 boolean smaPending = false; // If a state matrix is ready to read into the serial buffer (from USB)
 boolean smaReady2Load = false; // If a state matrix was read into the serial buffer and is ready to read into sma vars with LoadStateMatrix()
 boolean runFlag = false; // True if a command to run a state matrix arrives while an SM transmission is ongoing. Set to false once new SM starts.
-uint16_t nSMBytesRead = 0;
+uint16_t nSMBytesRead = 0; // For state matrix transmission during trial, where bytes transmitted must be tracked across timer interrupts
 
 union {
   byte Bytes[maxCurrentEvents*4];
@@ -402,28 +429,28 @@ union {
     uint64_t uint64[2];
 } timeBuffer; // For time transmission on trial end
 
-#if MachineType == 3
+#if MACHINE_TYPE == 3
   IntervalTimer hardwareTimer;
 #endif
 
 
 void setup() {
 // Resolve hardware peripherals from machine type
-if (MachineType == 1) {
+if (MACHINE_TYPE == 1) {
     usesFRAM = false;
     usesSPISync = true;
     usesSPIValves = true;
     usesUARTInputs = false;
     isolatorHigh = 1;
     isolatorLow = 0;
-} else if (MachineType == 2) {
+} else if (MACHINE_TYPE == 2) {
     usesFRAM = true;
     usesSPISync = false;
     usesSPIValves = true;
     usesUARTInputs = true;
     isolatorHigh = 0;
     isolatorLow = 1;
-} else if (MachineType == 3) {
+} else if (MACHINE_TYPE == 3) {
     usesFRAM = false;
     usesSPISync = false;
     usesSPIValves = false;
@@ -478,7 +505,7 @@ for (int i = 0; i < nOutputs; i++) {
       case 'W':
         pinMode(InputCh[i], INPUT);
         inputEnabled[i] = 1;
-        #if MachineType > 1 // NOTE: Previously if FirmwareVerison > 6 (0.7-0.9 but not 0.5 or 1.0.0+)
+        #if MACHINE_TYPE > 1
           inputState[i] = 1;
           lastInputState[i] = 1;
         #endif
@@ -497,18 +524,20 @@ for (int i = 0; i < nOutputs; i++) {
             case 1:
               Serial2.begin(SerialBaudRate); Byte1++;
             break;
-            #if MachineType > 1
-              case 2:
-                Serial3.begin(SerialBaudRate); Byte1++;
-              break;
+            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+                case 2:
+                  Serial3.begin(SerialBaudRate); Byte1++;
+                break;
             #endif  
-            #if MachineType == 3
+            #if MACHINE_TYPE == 3
               case 3:
                 Serial4.begin(SerialBaudRate); Byte1++;
               break;
-              case 4:
-                Serial5.begin(SerialBaudRate); Byte1++;
-              break;
+              #if ETHERNET_COM == 0
+                case 4:
+                  Serial5.begin(SerialBaudRate); Byte1++;
+                break;
+              #endif
             #endif
           }
       break;
@@ -529,18 +558,21 @@ for (int i = 0; i < nOutputs; i++) {
       case 'P':
         pinMode(OutputCh[i], OUTPUT);
         analogWrite(OutputCh[i], 0);
-        #if MachineType < 3
+        #if MACHINE_TYPE < 3
           PWMChannel[i] = g_APinDescription[OutputCh[i]].ulPWMChannel;
         #endif
       break;
     }
   }
-  
+  // Start UART --> Ethernet
+  #if ETHERNET_COM == 1 && MACHINE_TYPE == 3
+     Serial5.begin(2625000);
+  #endif  
   Byte1 = 0;
   pinMode(RedLEDPin, OUTPUT);
   pinMode(GreenLEDPin, OUTPUT);
   pinMode(BlueLEDPin, OUTPUT);
-  #if MachineType == 3
+  #if MACHINE_TYPE == 3
     pinMode(ValveEnablePin, OUTPUT);
     digitalWrite(ValveEnablePin, LOW);
   #endif
@@ -557,7 +589,7 @@ for (int i = 0; i < nOutputs; i++) {
   CurrentEventBuffer[0] = 1;
   SPI.begin();
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
-  #if MachineType < 3
+  #if MACHINE_TYPE < 3
     Timer3.attachInterrupt(handler); // Timer3 is Arduino Due's hardware timer, which will trigger the function "handler" precisely every (timerPeriod) us
     Timer3.start(timerPeriod); // Start HW timer
   #else
@@ -569,9 +601,9 @@ void loop() {
   if (!RunningStateMatrix) {
     relayModuleBytes();
   }
-  #if MachineType > 1
+  #if MACHINE_TYPE > 1
     if (smaPending) { // If a request to read a new state matrix arrived during a trial, read here at lower priority (in free time between timer interrupts)
-      USBCOM.readByteArray(StateMatrixBuffer, stateMatrixNBytes);
+      PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes);
       smaTransmissionConfirmed = true;
       smaReady2Load = true;
       smaPending = false;
@@ -587,7 +619,9 @@ void loop() {
 void handler() { // This is the timer handler function, which is called every (timerPeriod) us
   if (connectionState == 0) { // If not connected to Bpod software
     if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte to any connected USB serial port
-      USBCOM.writeByte(discoveryByte);
+      #if ETHERNET_COM == 0
+        PC.writeByte(discoveryByte);
+      #endif
       DiscoveryByteTime = millis();
     }
     updateStatusLED(1); // Update the indicator LED (cycles blue intensity)
@@ -602,116 +636,120 @@ void handler() { // This is the timer handler function, which is called every (t
     nCycles++; // Count cycles since request was sent
     if (nCycles > ModuleIDTimeout) { // If modules have had time to reply
       getModuleInfo = false; 
-      relayModuleInfo(Serial1COM, 1); // Function transmits 0 if no module replied, 1 if found, followed by length of description(bytes), then description
-      relayModuleInfo(Serial2COM, 2);
-      #if MachineType > 1
-        if (nSerialChannels > 3) {
-          relayModuleInfo(Serial3COM, 3);
-        }
+      relayModuleInfo(Module1, 1); // Function transmits 0 if no module replied, 1 if found, followed by length of description(bytes), then description
+      relayModuleInfo(Module2, 2);
+      #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+        relayModuleInfo(Module3, 3);
       #endif
-      #if MachineType == 3
-        relayModuleInfo(Serial4COM, 4);
-        relayModuleInfo(Serial5COM, 5);
+      #if MACHINE_TYPE == 3
+        relayModuleInfo(Module4, 4);
+        #if ETHERNET_COM == 0
+          relayModuleInfo(Module5, 5);
+        #endif
       #endif
     }
   }
-  if ((USBCOM.available() > 0) && (smaPending == false)) { // If a message has arrived on the USB serial port
-    CommandByte = USBCOM.readByte();  // P for Program, R for Run, O for Override, 6 for Handshake, F for firmware version, etc
+  if ((PC.available() > 0) && (smaPending == false)) { // If a message has arrived on the USB serial port
+    CommandByte = PC.readByte();  // P for Program, R for Run, O for Override, 6 for Handshake, F for firmware version, etc
     switch (CommandByte) {
       case '6':  // Initialization handshake
         connectionState = 1;
         updateStatusLED(2);
-        USBCOM.writeByte(53);
+        PC.writeByte(53);
         delayMicroseconds(100000);
-        USBCOM.flush();
+        PC.flush();
         resetSessionClock();
         resetSerialMessages();
         disableModuleRelays();
-        #if MachineType == 3
+        #if MACHINE_TYPE == 3
           digitalWrite(ValveEnablePin, HIGH); // Enable valve driver
         #endif
       break;
       case 'F':  // Return firmware and machine type
-        USBCOM.writeUint16(FirmwareVersion);
-        USBCOM.writeUint16(MachineType);
+        PC.writeUint16(FIRMWARE_VERSION);
+        PC.writeUint16(MACHINE_TYPE);
       break;
       case '*': // Reset session clock
         resetSessionClock();
-        USBCOM.writeByte(1);
+        PC.writeByte(1);
       break;
       case 'G':  // Return timestamp transmission scheme
-        USBCOM.writeByte(LiveTimestamps);
+        PC.writeByte(LIVE_TIMESTAMPS);
       break;
       case 'H': // Return local hardware configuration
-        USBCOM.writeUint16(MaxStates);
-        USBCOM.writeUint16(timerPeriod);
-        USBCOM.writeByte(maxSerialEvents);
-        USBCOM.writeByte(nGlobalTimers);
-        USBCOM.writeByte(nGlobalCounters);
-        USBCOM.writeByte(nConditions);
-        USBCOM.writeByte(nInputs);
-        USBCOM.writeByteArray(InputHW, nInputs);
-        USBCOM.writeByte(nOutputs);
+        PC.writeUint16(MaxStates);
+        PC.writeUint16(timerPeriod);
+        PC.writeByte(maxSerialEvents);
+        PC.writeByte(MAX_GLOBAL_TIMERS);
+        PC.writeByte(MAX_GLOBAL_COUNTERS);
+        PC.writeByte(MAX_CONDITIONS);
+        PC.writeByte(nInputs);
+        PC.writeByteArray(InputHW, nInputs);
+        PC.writeByte(nOutputs);
         for (int i = 0; i < nOutputs; i++) {
           if (OutputHW[i] == 'Y') {
-             USBCOM.writeByte(SyncChannelOriginalType);
+             PC.writeByte(SyncChannelOriginalType);
           } else {
-             USBCOM.writeByte(OutputHW[i]);
+             PC.writeByte(OutputHW[i]);
           }
         }
       break;
       case 'M': // Probe for connected modules and return module information
-        while (Serial1COM.available() >0 ) {
-           Serial1COM.readByte();
+        while (Module1.available() > 0 ) {
+           Module1.readByte();
         }
-        while (Serial2COM.available() >0 ) {
-           Serial2COM.readByte();
+        while (Module2.available() > 0 ) {
+           Module2.readByte();
         }
-        #if MachineType > 1
-          while (Serial3COM.available() >0 ) {
-             Serial3COM.readByte();
+        #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          while (Module3.available() > 0 ) {
+            Module3.readByte();
           }
         #endif
-        #if MachineType == 3
-          while (Serial4COM.available() >0 ) {
-             Serial4COM.readByte();
+        #if MACHINE_TYPE == 3
+          while (Module4.available() > 0 ) {
+             Module4.readByte();
           }
-          while (Serial5COM.available() >0 ) {
-             Serial5COM.readByte();
-          }
+          #if ETHERNET_COM == 0
+            while (Module5.available() > 0 ) {
+               Module5.readByte();
+            }
+          #endif
         #endif
-        Serial1COM.writeByte(255);
-        Serial2COM.writeByte(255);
-        #if MachineType > 1
-          Serial3COM.writeByte(255);
+        Module1.writeByte(255);
+        Module2.writeByte(255);
+        #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          Module3.writeByte(255);
         #endif
-        #if MachineType == 3
-          Serial4COM.writeByte(255);
-          Serial5COM.writeByte(255);
+        #if MACHINE_TYPE == 3
+          Module4.writeByte(255);
+          #if ETHERNET_COM == 0
+            Module5.writeByte(255);
+          #endif
         #endif
         nCycles = 0; // Number of cycles since request was sent
         getModuleInfo = true; // Outgoing serial messages are not sent until after timer handler completes - so replies are forwarded to USB in the main loop.
       break;
       case '%': // Set number of events per module (this should be run from MATLAB after all modules event # requests are received by MATLAB and a determination is made how to allocate.
-        USBCOM.readByteArray(nModuleEvents, nSerialChannels);
-        USBCOM.writeByte(1);
+        PC.readByteArray(nModuleEvents, nSerialChannels);
+        PC.writeByte(1);
       break;
       case 'E': // Enable ports
         for (int i = 0; i < nInputs; i++) {
-          inputEnabled[i] = USBCOM.readByte();
+          inputEnabled[i] = PC.readByte();
         }
-        USBCOM.writeByte(1);
+        PC.writeByte(1);
       break;
       case 'J': // set serial module relay mode (when not running a state machine, relays one port's incoming bytes to MATLAB/Python
         disableModuleRelays();
         clearSerialBuffers();
-        Byte1 = USBCOM.readByte();
-        Byte2 = USBCOM.readByte();
+        Byte1 = PC.readByte();
+        Byte2 = PC.readByte();
         UARTrelayMode[Byte1] = Byte2;
       break;
       case 'K': // Set sync channel and mode
-      NewSyncChannel = USBCOM.readByte();
-      SyncMode = USBCOM.readByte();
+      NewSyncChannel = PC.readByte();
+      SyncMode = PC.readByte();
       if (!usesSPISync) {
         if (NewSyncChannel != SyncChannel){ 
           if (NewSyncChannel == 255) {
@@ -735,11 +773,11 @@ void handler() { // This is the timer handler function, which is called every (t
           SyncChannel = NewSyncChannel;
         }
       }
-      USBCOM.writeByte(1);
+      PC.writeByte(1);
       break;
       case 'O':  // Override digital hardware state
-        overrideChan = USBCOM.readByte();
-        overrideChanState = USBCOM.readByte();
+        overrideChan = PC.readByte();
+        overrideChanState = PC.readByte();
         switch (OutputHW[overrideChan]) {
           case 'D':
           case 'B':
@@ -767,113 +805,117 @@ void handler() { // This is the timer handler function, which is called every (t
         }
       break;
       case 'I': // Read and return digital input line states (for debugging)
-        Byte1 = USBCOM.readByte();
+        Byte1 = PC.readByte();
         Byte2 = digitalReadDirect(InputCh[Byte1]);
         Byte2 = (Byte2 == logicHigh[Byte1]);
-        USBCOM.writeByte(Byte2);
+        PC.writeByte(Byte2);
       break;
       case 'Z':  // Bpod governing machine has closed the client program
         disableModuleRelays();
         connectionState = 0;
         connectionState = 0;
-        USBCOM.writeByte('1');
+        PC.writeByte('1');
         updateStatusLED(0);
         DiscoveryByteTime = millis();
-        #if MachineType == 3
+        #if MACHINE_TYPE == 3
           digitalWrite(ValveEnablePin, LOW); // Disable valve driver
         #endif
       break;
       case 'S': // Echo Soft code.
-        VirtualEventData = USBCOM.readByte();
-        USBCOM.writeByte(2);
-        USBCOM.writeByte(VirtualEventData);
+        VirtualEventData = PC.readByte();
+        PC.writeByte(2);
+        PC.writeByte(VirtualEventData);
       break;
       case 'T': // Receive bytes from USB and send to hardware serial channel 1-5
-        Byte1 = USBCOM.readByte() - 1; // Serial channel
-        nBytes = USBCOM.readUint8();
+        Byte1 = PC.readByte() - 1; // Serial channel
+        nBytes = PC.readUint8();
         switch (Byte1) {
           case 0:
-            USBCOM.readByteArray(SerialRelayBuffer, nBytes);
-            Serial1COM.writeByteArray(SerialRelayBuffer, nBytes);
+            PC.readByteArray(SerialRelayBuffer, nBytes);
+            Module1.writeByteArray(SerialRelayBuffer, nBytes);
           break;
           case 1:
-            USBCOM.readByteArray(SerialRelayBuffer, nBytes);
-            Serial2COM.writeByteArray(SerialRelayBuffer, nBytes);
+            PC.readByteArray(SerialRelayBuffer, nBytes);
+            Module2.writeByteArray(SerialRelayBuffer, nBytes);
           break;
-          #if MachineType > 1
+          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
             case 2:
-              USBCOM.readByteArray(SerialRelayBuffer, nBytes);
-              Serial3COM.writeByteArray(SerialRelayBuffer, nBytes);
+              PC.readByteArray(SerialRelayBuffer, nBytes);
+              Module3.writeByteArray(SerialRelayBuffer, nBytes);
             break;
           #endif
-          #if MachineType == 3
+          #if MACHINE_TYPE == 3
             case 3:
-              USBCOM.readByteArray(SerialRelayBuffer, nBytes);
-              Serial4COM.writeByteArray(SerialRelayBuffer, nBytes);
+              PC.readByteArray(SerialRelayBuffer, nBytes);
+              Module4.writeByteArray(SerialRelayBuffer, nBytes);
             break;
-            case 4:
-              USBCOM.readByteArray(SerialRelayBuffer, nBytes);
-              Serial5COM.writeByteArray(SerialRelayBuffer, nBytes);
-            break;
+            #if ETHERNET_COM == 0
+              case 4:
+                  PC.readByteArray(SerialRelayBuffer, nBytes);
+                  Module5.writeByteArray(SerialRelayBuffer, nBytes);
+              break;
+            #endif
           #endif
          }
       break;
       case 'U': // Recieve serial message index from USB and send corresponding message to hardware serial channel 1-5
-        Byte1 = USBCOM.readByte() - 1;
-        Byte2 = USBCOM.readByte();
+        Byte1 = PC.readByte() - 1;
+        Byte2 = PC.readByte();
         Byte3 = SerialMessage_nBytes[Byte2][Byte1];
-          for (int i = 0; i < Byte3; i++) {
-             serialByteBuffer[i] = SerialMessageMatrix[Byte2][Byte1][i];
-          }
+        for (int i = 0; i < Byte3; i++) {
+           serialByteBuffer[i] = SerialMessageMatrix[Byte2][Byte1][i];
+        }
         switch (Byte1) {
           case 0:
-            Serial1COM.writeByteArray(serialByteBuffer, Byte3);
+            Module1.writeByteArray(serialByteBuffer, Byte3);
           break;
           case 1:
-            Serial2COM.writeByteArray(serialByteBuffer, Byte3);
+            Module2.writeByteArray(serialByteBuffer, Byte3);
           break;
-          #if MachineType > 1
+          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
             case 2:
-              Serial3COM.writeByteArray(serialByteBuffer, Byte3);
+              Module3.writeByteArray(serialByteBuffer, Byte3);
             break;
           #endif
-          #if MachineType == 3
+          #if MACHINE_TYPE == 3
             case 3:
-              Serial4COM.writeByteArray(serialByteBuffer, Byte3);
+              Module4.writeByteArray(serialByteBuffer, Byte3);
             break;
-            case 4:
-              Serial5COM.writeByteArray(serialByteBuffer, Byte3);
-            break;
+            #if ETHERNET_COM == 0
+              case 4:
+                Module5.writeByteArray(serialByteBuffer, Byte3);
+              break;
+            #endif
           #endif
         }
         break;
       case 'L': // Load serial message library
-        Byte1 = USBCOM.readByte(); // Serial Channel
-        Byte2 = USBCOM.readByte(); // nMessages arriving
+        Byte1 = PC.readByte(); // Serial Channel
+        Byte2 = PC.readByte(); // nMessages arriving
         for (int i = 0; i < Byte2; i++) {
-          Byte3 = USBCOM.readByte(); // Message Index
-          Byte4 = USBCOM.readByte(); // Message Length
+          Byte3 = PC.readByte(); // Message Index
+          Byte4 = PC.readByte(); // Message Length
           SerialMessage_nBytes[Byte3][Byte1] = Byte4;
           for (int j = 0; j < Byte4; j++) {
-            SerialMessageMatrix[Byte3][Byte1][j] = USBCOM.readByte();
+            SerialMessageMatrix[Byte3][Byte1][j] = PC.readByte();
           }
         }
-        USBCOM.writeByte(1);
+        PC.writeByte(1);
       break;
       case '>': // Reset serial messages to equivalent byte codes (i.e. message# 4 = one byte, 0x4)
         resetSerialMessages();
-        USBCOM.writeByte(1);
+        PC.writeByte(1);
       break;
       case 'V': // Manual override: execute virtual event
-        VirtualEventTarget = USBCOM.readByte();
-        VirtualEventData = USBCOM.readByte();
+        VirtualEventTarget = PC.readByte();
+        VirtualEventData = PC.readByte();
         if (RunningStateMatrix) {
            inputState[VirtualEventTarget] = VirtualEventData;
            inputOverrideState[VirtualEventTarget] = true;
         }
       break;
       case '~': // USB soft code
-        SoftEvent = USBCOM.readByte();
+        SoftEvent = PC.readByte();
         if (!RunningStateMatrix) {
           SoftEvent = 255; // 255 = No Event
         }
@@ -881,7 +923,7 @@ void handler() { // This is the timer handler function, which is called every (t
       case 'C': // Get new compressed state matrix from MATLAB/Python 
         newSMATransmissionStarted = true;
         smaTransmissionConfirmed = false;
-        USBCOM.readByteArray(typeBuffer.byteArray, 4);
+        PC.readByteArray(typeBuffer.byteArray, 4);
         RunStateMatrixASAP = typeBuffer.byteArray[0];
         using255BackSignal = typeBuffer.byteArray[1];
         typeBuffer.byteArray[0] = typeBuffer.byteArray[2];
@@ -889,15 +931,15 @@ void handler() { // This is the timer handler function, which is called every (t
         stateMatrixNBytes = typeBuffer.uint16;
         if (stateMatrixNBytes < StateMatrixBufferSize) {
           if (RunningStateMatrix) {
-            #if MachineType > 1
+            #if MACHINE_TYPE > 1
               nSMBytesRead = 0;
               smaPending = true;
             #else
-              USBCOM.writeByte(0);
+              PC.writeByte(0);
             #endif
           } else {
-            #if MachineType > 1
-              USBCOM.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
+            #if MACHINE_TYPE > 1
+              PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
               smaTransmissionConfirmed = true;
             #endif
             loadStateMatrix(); // Loads the state matrix from the buffer into the relevant variables
@@ -915,7 +957,7 @@ void handler() { // This is the timer handler function, which is called every (t
         MatrixFinished = true;
         RunningStateMatrix = false;
         resetOutputs(); // Returns all lines to low by forcing final state
-        break;
+      break;
     } // End switch commandbyte
   } // End SerialUSB.available
   if (RunningStateMatrix) {
@@ -923,7 +965,7 @@ void handler() { // This is the timer handler function, which is called every (t
       firstLoop = 0;
       MatrixStartTimeMicros = sessionTimeMicros(); 
       timeBuffer.uint64[0] = MatrixStartTimeMicros;
-      USBCOM.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
+      PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
       SyncWrite();
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
     } else {
@@ -969,8 +1011,8 @@ void handler() { // This is the timer handler function, which is called every (t
           if (usesUARTInputs) {
             switch(Byte1) {
               case 0:
-                if (Serial1COM.available()>0) {
-                  Byte2 = Serial1COM.readByte();
+                if (Module1.available() > 0) {
+                  Byte2 = Module1.readByte();
                   if (Byte2 <= nModuleEvents[0]) {
                     CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                   }
@@ -978,8 +1020,8 @@ void handler() { // This is the timer handler function, which is called every (t
                 Byte1++;
               break;
               case 1:
-                if (Serial2COM.available()>0) {
-                  Byte2 = Serial2COM.readByte();
+                if (Module2.available() > 0) {
+                  Byte2 = Module2.readByte();
                   if (Byte2 <= nModuleEvents[1]) {
                     CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                   }
@@ -987,9 +1029,9 @@ void handler() { // This is the timer handler function, which is called every (t
                 Byte1++;
               break;
               case 2:
-                #if MachineType > 1
-                  if (Serial3COM.available()>0) {
-                    Byte2 = Serial3COM.readByte();
+                #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+                  if (Module3.available() > 0) {
+                    Byte2 = Module3.readByte();
                     if (Byte2 <= nModuleEvents[2]) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
@@ -998,9 +1040,9 @@ void handler() { // This is the timer handler function, which is called every (t
                 Byte1++;
               break;
               case 3:
-                #if MachineType == 3
-                  if (Serial4COM.available()>0) {
-                    Byte2 = Serial4COM.readByte();
+                #if MACHINE_TYPE == 3
+                  if (Module4.available() > 0) {
+                    Byte2 = Module4.readByte();
                     if (Byte2 <= nModuleEvents[3]) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
@@ -1009,9 +1051,9 @@ void handler() { // This is the timer handler function, which is called every (t
                 Byte1++;
               break;
               case 4:
-                #if MachineType == 3
-                  if (Serial5COM.available()>0) {
-                    Byte2 = Serial5COM.readByte();
+                #if MACHINE_TYPE == 3 && ETHERNET_COM == 0
+                  if (Module5.available() > 0) {
+                    Byte2 = Module5.readByte();
                     if (Byte2 <= nModuleEvents[4]) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
@@ -1045,18 +1087,18 @@ void handler() { // This is the timer handler function, which is called every (t
                 GlobalTimerStart[i] = CurrentTime + GlobalTimerLoopIntervals[i];
                 GlobalTimerEnd[i] = GlobalTimerStart[i] + GlobalTimers[i];
                 if (SendGlobalTimerEvents[i]) {
-                  CurrentEvent[nCurrentEvents] = Ev+nGlobalTimers; nCurrentEvents++;
+                  CurrentEvent[nCurrentEvents] = Ev+MAX_GLOBAL_TIMERS; nCurrentEvents++;
                 }
                 if (GTUsingLoopCounter[i]) {
                   GlobalTimerLoopCount[i] += 1;
                 }
               } else {
                 if (SendGlobalTimerEvents[i]) {
-                  CurrentEvent[nCurrentEvents] = Ev+nGlobalTimers; nCurrentEvents++;
+                  CurrentEvent[nCurrentEvents] = Ev+MAX_GLOBAL_TIMERS; nCurrentEvents++;
                 }
               }
             } else {
-              CurrentEvent[nCurrentEvents] = Ev+nGlobalTimers; nCurrentEvents++;
+              CurrentEvent[nCurrentEvents] = Ev+MAX_GLOBAL_TIMERS; nCurrentEvents++;
             }
           }
         } else if (GlobalTimersTriggered[i] == true) {
@@ -1138,8 +1180,8 @@ void handler() { // This is the timer handler function, which is called every (t
       }
 
       // Store timestamps of events captured in this cycle
-      #if LiveTimestamps == 0
-        #if MachineType == 2
+      #if LIVE_TIMESTAMPS == 0
+        #if MACHINE_TYPE == 2
           for (int i = 0; i < nCurrentEvents; i++) {
             CurrentTimeStamps.Uint32[i] = CurrentTime;
             nEvents++;
@@ -1164,15 +1206,15 @@ void handler() { // This is the timer handler function, which is called every (t
         for (int i = 2; i < nCurrentEvents+2; i++) {
           CurrentEventBuffer[i] = CurrentEvent[i-2];
         }
-        #if LiveTimestamps == 0
-          USBCOM.writeByteArray(CurrentEventBuffer, nCurrentEvents+2);
+        #if LIVE_TIMESTAMPS == 0
+          PC.writeByteArray(CurrentEventBuffer, nCurrentEvents+2);
         #else  
           typeBuffer.uint32 = CurrentTime;
           CurrentEventBuffer[nCurrentEvents+2] = typeBuffer.byteArray[0];
           CurrentEventBuffer[nCurrentEvents+3] = typeBuffer.byteArray[1];
           CurrentEventBuffer[nCurrentEvents+4] = typeBuffer.byteArray[2];
           CurrentEventBuffer[nCurrentEvents+5] = typeBuffer.byteArray[3];
-          USBCOM.writeByteArray(CurrentEventBuffer, nCurrentEvents+6);
+          PC.writeByteArray(CurrentEventBuffer, nCurrentEvents+6);
         #endif   
       }
       nCurrentEvents = 0;
@@ -1215,22 +1257,22 @@ void handler() { // This is the timer handler function, which is called every (t
     serialByteBuffer[0] = 1; // Op Code for sending events
     serialByteBuffer[1] = 1; // Read one event
     serialByteBuffer[2] = 255; // Send Matrix-end code
-    USBCOM.writeByteArray(serialByteBuffer, 3);
-    #if LiveTimestamps == 1
+    PC.writeByteArray(serialByteBuffer, 3);
+    #if LIVE_TIMESTAMPS == 1
       timeBuffer.uint32[0] = CurrentTime;
       timeBuffer.uint32[1] = nCyclesCompleted;
       timeBuffer.uint64[1] = MatrixEndTimeMicros;
-      USBCOM.writeByteArray(timeBuffer.byteArray, 16);
-      //USBCOM.writeUint32(CurrentTime);
+      PC.writeByteArray(timeBuffer.byteArray, 16);
+      //PC.writeUint32(CurrentTime);
     #else
-      USBCOM.writeUint32(nCyclesCompleted);
+      PC.writeUint32(nCyclesCompleted);
       timeBuffer.uint64[0] = MatrixEndTimeMicros;
-      USBCOM.writeByteArray(timeBuffer.byteArray, 8);
+      PC.writeByteArray(timeBuffer.byteArray, 8);
     #endif
     
-    #if LiveTimestamps == 0
-      USBCOM.writeUint16(nEvents);
-      #if MachineType == 2
+    #if LIVE_TIMESTAMPS == 0
+      PC.writeUint16(nEvents);
+      #if MACHINE_TYPE == 2
         // Return event times from fRAM IC
         digitalWriteDirect(fRAMhold, HIGH);
         digitalWriteDirect(fRAMcs, LOW);
@@ -1247,16 +1289,16 @@ void handler() { // This is the timer handler function, which is called every (t
         }  
         for (int i = 0; i < nFullBufferReads; i++) { // Full buffer transfers; skipped if nFullBufferReads = 0
           SPI.transfer(SerialRelayBuffer, SerialRelayBufferSize);
-          USBCOM.writeByteArray(SerialRelayBuffer, SerialRelayBufferSize);
+          PC.writeByteArray(SerialRelayBuffer, SerialRelayBufferSize);
         }
         nRemainderBytes = (nEvents*4)-(nFullBufferReads*SerialRelayBufferSize);
         if (nRemainderBytes > 0) {
           SPI.transfer(SerialRelayBuffer, nRemainderBytes);
-          USBCOM.writeByteArray(SerialRelayBuffer, nRemainderBytes);   
+          PC.writeByteArray(SerialRelayBuffer, nRemainderBytes);   
         }
         digitalWriteDirect(fRAMcs, HIGH);
       #else
-        USBCOM.writeUint32Array(Timestamps, nEvents);
+        PC.writeUint32Array(Timestamps, nEvents);
       #endif  
     #endif   
     MatrixFinished = false;
@@ -1316,7 +1358,7 @@ void SyncRegWrite(int value) {
   }
 }
 void updateStatusLED(int Mode) {
-  if (useStatusLED) {
+  if (STATUS_LED_ENABLED) {
     CurrentTime = millis();
     switch (Mode) {
       case 0: {
@@ -1411,23 +1453,25 @@ void setStateOutputs(byte State) {
           }
           switch(thisChannel) {
             case 0:
-              Serial1COM.writeByteArray(serialByteBuffer, nMessageBytes);
+              Module1.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
             case 1:
-              Serial2COM.writeByteArray(serialByteBuffer, nMessageBytes);
+              Module2.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
-            #if MachineType > 1
+            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
               case 2:
-                Serial3COM.writeByteArray(serialByteBuffer, nMessageBytes);
+                Module3.writeByteArray(serialByteBuffer, nMessageBytes);
               break;
             #endif
-            #if MachineType == 3
+            #if MACHINE_TYPE == 3
               case 3:
-                Serial4COM.writeByteArray(serialByteBuffer, nMessageBytes);
+                Module4.writeByteArray(serialByteBuffer, nMessageBytes);
               break;
-              case 4:
-                Serial5COM.writeByteArray(serialByteBuffer, nMessageBytes);
-              break;
+              #if ETHERNET_COM == 0
+                case 4:
+                  Module5.writeByteArray(serialByteBuffer, nMessageBytes);
+                break;
+              #endif
             #endif
           }
         }
@@ -1437,7 +1481,7 @@ void setStateOutputs(byte State) {
         if (OutputStateMatrix[State][i] > 0) {
           serialByteBuffer[0] = 2; // Code for MATLAB to receive soft-code byte
           serialByteBuffer[1] = OutputStateMatrix[State][i]; // Soft code byte
-          USBCOM.writeByteArray(serialByteBuffer, 2);
+          PC.writeByteArray(serialByteBuffer, 2);
         }
         break;
         case 'D':
@@ -1458,7 +1502,7 @@ void setStateOutputs(byte State) {
         break;
         case 'P':
           if (outputOverrideState[i] == 0) {   
-            #if MachineType < 3
+            #if MACHINE_TYPE < 3
               //Arduino Due PERFORMANCE HACK: the next line is equivalent to: analogWrite(OutputCh[i], OutputStateMatrix[State][i]); 
               PWMC_SetDutyCycle(PWM_INTERFACE, PWMChannel[i], OutputStateMatrix[State][i]);
             #else
@@ -1532,12 +1576,12 @@ void resetOutputs() {
     }
   }
   valveWrite();
-  for (int i = 0; i < nGlobalTimers; i++) {
+  for (int i = 0; i < MAX_GLOBAL_TIMERS; i++) {
     GlobalTimersTriggered[i] = false;
     GlobalTimersActive[i] = false;
     GlobalTimerLoopCount[i] = 0;
   }
-  for (int i = 0; i < nGlobalCounters; i++) {  
+  for (int i = 0; i < MAX_GLOBAL_COUNTERS; i++) {  
     GlobalCounterCounts[i] = 0;
   }
   MeaningfulStateTimer = false;
@@ -1578,7 +1622,7 @@ void valveWrite() {
 }
 
 void digitalWriteDirect(int pin, boolean val) { // >10x Faster than digitalWrite(), specific to Arduino Due
-  #if MachineType < 3
+  #if MACHINE_TYPE < 3
     if (val) g_APinDescription[pin].pPort -> PIO_SODR = g_APinDescription[pin].ulPin;
     else    g_APinDescription[pin].pPort -> PIO_CODR = g_APinDescription[pin].ulPin;
   #else
@@ -1587,7 +1631,7 @@ void digitalWriteDirect(int pin, boolean val) { // >10x Faster than digitalWrite
 }
 
 byte digitalReadDirect(int pin) { // >10x Faster than digitalRead(), specific to Arduino Due
-  #if MachineType < 3
+  #if MACHINE_TYPE < 3
     return !!(g_APinDescription[pin].pPort -> PIO_PDSR & g_APinDescription[pin].ulPin);
   #else
     return digitalRead(pin);
@@ -1613,23 +1657,25 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
           }
         switch (thisChannel) {
           case 0:
-            Serial1COM.writeByteArray(serialByteBuffer, nMessageBytes);
+            Module1.writeByteArray(serialByteBuffer, nMessageBytes);
           break;
           case 1:
-            Serial2COM.writeByteArray(serialByteBuffer, nMessageBytes);
+            Module2.writeByteArray(serialByteBuffer, nMessageBytes);
           break;
-          #if MachineType > 1
+          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
             case 2:
-              Serial3COM.writeByteArray(serialByteBuffer, nMessageBytes);
+              Module3.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
           #endif
-          #if MachineType == 3
+          #if MACHINE_TYPE == 3
             case 3:
-              Serial4COM.writeByteArray(serialByteBuffer, nMessageBytes);
+              Module4.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
-            case 4:
-              Serial5COM.writeByteArray(serialByteBuffer, nMessageBytes);
-            break;
+            #if ETHERNET_COM == 0
+              case 4:
+                Module5.writeByteArray(serialByteBuffer, nMessageBytes);
+              break;
+            #endif
           #endif
         }
       }
@@ -1680,48 +1726,48 @@ void relayModuleInfo(ArCOM serialCOM, byte moduleID) {
     if (Byte1 == 'A') { // A = Acknowledge; this is most likely a module
       if (serialCOM.available() > 3) {
         moduleFound = true;
-        USBCOM.writeByte(1); // Module detected
+        PC.writeByte(1); // Module detected
         for (int i = 0; i < 4; i++) { // Send firmware version
-          USBCOM.writeByte(serialCOM.readByte());
+          PC.writeByte(serialCOM.readByte());
         }
         nBytes = serialCOM.readByte(); // Length of module name
-        USBCOM.writeByte(nBytes);
+        PC.writeByte(nBytes);
         for (int i = 0; i < nBytes; i++) { // Transfer module name
-          USBCOM.writeByte(serialCOM.readByte());
+          PC.writeByte(serialCOM.readByte());
         }
         Byte1 = serialCOM.readByte(); // 1 if more module info follows, 0 if not
         if (Byte1 == 1) { // Optional: module can return additional info with an op code scheme
           while(Byte1 == 1) {
-            USBCOM.writeByte(1); // indicate that more info is coming for this module
+            PC.writeByte(1); // indicate that more info is coming for this module
             CommandByte = serialCOM.readByte();
             switch (CommandByte) {
               case '#': // Number of behavior events to reserve for the module
-                USBCOM.writeByte('#');
-                USBCOM.writeByte(serialCOM.readByte());
+                PC.writeByte('#');
+                PC.writeByte(serialCOM.readByte());
               break;
               case 'E': // Event name strings (replace default event names: ModuleName1_1, etc)
-                USBCOM.writeByte('E');
+                PC.writeByte('E');
                 Byte2 = serialCOM.readByte(); // nEvent names to transmit
-                USBCOM.writeByte(Byte2);
+                PC.writeByte(Byte2);
                 for (int i = 0; i < Byte2; i++) {
                   Byte3 = serialCOM.readByte(); // Length of event name (in characters)
-                  USBCOM.writeByte(Byte3);
+                  PC.writeByte(Byte3);
                   serialCOM.readByteArray(SerialRelayBuffer, Byte3);
-                  USBCOM.writeByteArray(SerialRelayBuffer, Byte3);
+                  PC.writeByteArray(SerialRelayBuffer, Byte3);
                 }
               break;
             }
             Byte1 = serialCOM.readByte(); // 1 if more module info follows, 0 if not
           }
-          USBCOM.writeByte(0); // indicate that no more info is coming for this module 
+          PC.writeByte(0); // indicate that no more info is coming for this module 
         } else {
-          USBCOM.writeByte(0); // indicate that no more info is coming for this module 
+          PC.writeByte(0); // indicate that no more info is coming for this module 
         }
       }
     }
   }
   if (!moduleFound) {
-    USBCOM.writeByte(0); // Module not detected
+    PC.writeByte(0); // Module not detected
   }
 }
 
@@ -1736,48 +1782,50 @@ void relayModuleBytes() {
       if (UARTrelayMode[i]) {
         switch(i) {
           case 0:
-            Byte3 = Serial1COM.available();
+            Byte3 = Module1.available();
             if (Byte3>0) { 
               for (int j = 0; j < Byte3; j++) {
-                 USBCOM.writeByte(Serial1COM.readByte());       
+                 PC.writeByte(Module1.readByte());       
               }
             }
           break;
           case 1:
-            Byte3 = Serial2COM.available();
+            Byte3 = Module2.available();
             if (Byte3>0) { 
               for (int j = 0; j < Byte3; j++) {
-                 USBCOM.writeByte(Serial2COM.readByte());       
+                 PC.writeByte(Module2.readByte());       
               }
             }
           break;
-          #if MachineType > 1
+          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
             case 2:
-              Byte3 = Serial3COM.available();
+              Byte3 = Module3.available();
               if (Byte3>0) { 
                 for (int j = 0; j < Byte3; j++) {
-                   USBCOM.writeByte(Serial3COM.readByte());       
+                   PC.writeByte(Module3.readByte());       
                 }
               }
             break;
           #endif
-          #if MachineType == 3
+          #if MACHINE_TYPE == 3
             case 3:
-                Byte3 = Serial4COM.available();
+                Byte3 = Module4.available();
                 if (Byte3>0) { 
                   for (int j = 0; j < Byte3; j++) {
-                     USBCOM.writeByte(Serial4COM.readByte());       
+                     PC.writeByte(Module4.readByte());       
                   }
                 }
             break;
-            case 4:
-                Byte3 = Serial5COM.available();
-              if (Byte3>0) { 
-                for (int j = 0; j < Byte3; j++) {
-                   USBCOM.writeByte(Serial5COM.readByte());       
+            #if ETHERNET_COM == 0
+              case 4:
+                Byte3 = Module5.available();
+                if (Byte3>0) { 
+                  for (int j = 0; j < Byte3; j++) {
+                     PC.writeByte(Module5.readByte());       
+                  }
                 }
-              }
-            break;
+              break;
+            #endif
           #endif
         }
       }
@@ -1791,33 +1839,35 @@ void clearSerialBuffers() {
         case 'U': 
             switch(Byte1) {
               case 0:
-                while (Serial1COM.available() > 0) {
-                  Serial1COM.readByte(); Byte1++;
+                while (Module1.available() > 0) {
+                  Module1.readByte(); Byte1++;
                 }
               break;
               case 1:
-                while (Serial2COM.available() > 0) {
-                  Serial2COM.readByte(); Byte1++;
+                while (Module2.available() > 0) {
+                  Module2.readByte(); Byte1++;
                 }
               break;
-              #if MachineType > 1
+              #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
                 case 2:
-                  while (Serial3COM.available() > 0) {
-                    Serial3COM.readByte(); Byte1++;
+                  while (Module3.available() > 0) {
+                    Module3.readByte(); Byte1++;
                   }
                 break;
               #endif
-              #if MachineType == 3
+              #if MACHINE_TYPE == 3
                 case 3:
-                  while (Serial4COM.available() > 0) {
-                    Serial4COM.readByte(); Byte1++;
+                  while (Module4.available() > 0) {
+                    Module4.readByte(); Byte1++;
                   }
                 break;
-                case 4:
-                  while (Serial5COM.available() > 0) {
-                    Serial5COM.readByte(); Byte1++;
-                  }
-                break;
+                #if ETHERNET_COM == 0
+                  case 4:
+                    while (Module5.available() > 0) {
+                      Module5.readByte(); Byte1++;
+                    }
+                  break;
+                #endif
               #endif
             }
        break;
@@ -1826,16 +1876,16 @@ void clearSerialBuffers() {
 }
 
 void loadStateMatrix() { // Loads a state matrix from the serial buffer into the relevant local variables
-  #if MachineType > 1
+  #if MACHINE_TYPE > 1
     nStates = StateMatrixBuffer[0];
     nGlobalTimersUsed = StateMatrixBuffer[1];
     nGlobalCountersUsed = StateMatrixBuffer[2];
     nConditionsUsed = StateMatrixBuffer[3];
   #else
-    nStates = USBCOM.readByte();
-    nGlobalTimersUsed = USBCOM.readByte();
-    nGlobalCountersUsed = USBCOM.readByte();
-    nConditionsUsed = USBCOM.readByte();
+    nStates = PC.readByte();
+    nGlobalTimersUsed = PC.readByte();
+    nGlobalCountersUsed = PC.readByte();
+    nConditionsUsed = PC.readByte();
   #endif
   bufferPos = 4; // Current position in serial relay buffer
   for (int x = 0; x < nStates; x++) { // Set matrix to default
@@ -1849,20 +1899,20 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     smGlobalTimerTrig[x] = 0;
     smGlobalTimerCancel[x] = 0;
     smGlobalCounterReset[x] = 0;
-    for (int y = 0; y < nGlobalTimers; y++) {
+    for (int y = 0; y < MAX_GLOBAL_TIMERS; y++) {
       GlobalTimerStartMatrix[x][y] = x;
     }
-    for (int y = 0; y < nGlobalTimers; y++) {
+    for (int y = 0; y < MAX_GLOBAL_TIMERS; y++) {
       GlobalTimerEndMatrix[x][y] = x;
     }
-    for (int y = 0; y < nGlobalCounters; y++) {
+    for (int y = 0; y < MAX_GLOBAL_COUNTERS; y++) {
       GlobalCounterMatrix[x][y] = x;
     }
-    for (int y = 0; y < nConditions; y++) {
+    for (int y = 0; y < MAX_CONDITIONS; y++) {
       ConditionMatrix[x][y] = x;
     }
   }
-  #if MachineType > 1 // Bpod 0.7+; Read state matrix from RAM buffer
+  #if MACHINE_TYPE > 1 // Bpod 0.7+; Read state matrix from RAM buffer
     for (int x = 0; x < nStates; x++) { // Get State timer matrix
       StateTimerMatrix[x] = StateMatrixBuffer[bufferPos]; bufferPos++;
     }
@@ -1955,7 +2005,7 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
       smGlobalCounterReset[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
     }
 
-    #if globalTimerByteWidth == 1
+    #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
         for (int i = 0; i < nStates; i++) {
           smGlobalTimerTrig[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
         }
@@ -1965,7 +2015,7 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
         for (int i = 0; i < nGlobalTimersUsed; i++) {
           GlobalTimerOnsetTriggers[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
         }
-    #elif globalTimerByteWidth == 2
+    #elif GLOBALTIMER_TRIG_BYTEWIDTH == 2
         for (int i = 0; i < nStates; i++) {
           typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
           typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
@@ -1981,7 +2031,7 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
           typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
           GlobalTimerOnsetTriggers[i] = typeBuffer.uint16;
         }
-     #elif globalTimerByteWidth == 4
+     #elif GLOBALTIMER_TRIG_BYTEWIDTH == 4
         for (int i = 0; i < nStates; i++) {
           typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
           typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
@@ -2041,69 +2091,69 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     }
   #else // Bpod 0.5; Read state matrix from serial port
     for (int x = 0; x < nStates; x++) { // Get State timer matrix
-      StateTimerMatrix[x] = USBCOM.readByte();
+      StateTimerMatrix[x] = PC.readByte();
     }
     for (int x = 0; x < nStates; x++) { // Get Input Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       for (int y = 0; y<nOverrides; y++) {
-        col = USBCOM.readByte();
-        val = USBCOM.readByte();
+        col = PC.readByte();
+        val = PC.readByte();
         InputStateMatrix[x][col] = val;
       }
     }
     for (int x = 0; x < nStates; x++) { // Get Output Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       for (int y = 0; y<nOverrides; y++) {
-        col = USBCOM.readByte();
-        val = USBCOM.readByte();
+        col = PC.readByte();
+        val = PC.readByte();
         OutputStateMatrix[x][col] = val;
       }
     }
     for (int x = 0; x < nStates; x++) { // Get Global Timer Start Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       if (nOverrides > 0) {
         for (int y = 0; y<nOverrides; y++) {
-          col = USBCOM.readByte();
-          val = USBCOM.readByte();
+          col = PC.readByte();
+          val = PC.readByte();
           GlobalTimerStartMatrix[x][col] = val;
         }
       }
     }
     for (int x = 0; x < nStates; x++) { // Get Global Timer End Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       if (nOverrides > 0) {
         for (int y = 0; y<nOverrides; y++) {
-          col = USBCOM.readByte();
-          val = USBCOM.readByte();
+          col = PC.readByte();
+          val = PC.readByte();
           GlobalTimerEndMatrix[x][col] = val;
         }
       }
     }
     for (int x = 0; x < nStates; x++) { // Get Global Counter Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       if (nOverrides > 0) {
         for (int y = 0; y<nOverrides; y++) {
-          col = USBCOM.readByte();
-          val = USBCOM.readByte();
+          col = PC.readByte();
+          val = PC.readByte();
           GlobalCounterMatrix[x][col] = val;
         }
       }
     }
     for (int x = 0; x < nStates; x++) { // Get Condition Matrix differences
-      nOverrides = USBCOM.readByte();
+      nOverrides = PC.readByte();
       if (nOverrides > 0) {
         for (int y = 0; y<nOverrides; y++) {
-          col = USBCOM.readByte();
-          val = USBCOM.readByte();
+          col = PC.readByte();
+          val = PC.readByte();
           ConditionMatrix[x][col] = val;
         }
       }
     }
     if (nGlobalTimersUsed > 0) {
-      USBCOM.readByteArray(GlobalTimerChannel, nGlobalTimersUsed); // Get output channels of global timers
-      USBCOM.readByteArray(GlobalTimerOnMessage, nGlobalTimersUsed); // Get serial messages to trigger on timer start
-      USBCOM.readByteArray(GlobalTimerOffMessage, nGlobalTimersUsed); // Get serial messages to trigger on timer end
-      USBCOM.readByteArray(GlobalTimerLoop, nGlobalTimersUsed); // Get global timer loop state (true/false)
+      PC.readByteArray(GlobalTimerChannel, nGlobalTimersUsed); // Get output channels of global timers
+      PC.readByteArray(GlobalTimerOnMessage, nGlobalTimersUsed); // Get serial messages to trigger on timer start
+      PC.readByteArray(GlobalTimerOffMessage, nGlobalTimersUsed); // Get serial messages to trigger on timer end
+      PC.readByteArray(GlobalTimerLoop, nGlobalTimersUsed); // Get global timer loop state (true/false)
       for (int i = 0; i < nGlobalTimersUsed; i++) {
         if (GlobalTimerLoop[i] > 1) {
           GTUsingLoopCounter[i] = true;
@@ -2111,38 +2161,38 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
           GTUsingLoopCounter[i] = false;
         }
       }
-      USBCOM.readByteArray(SendGlobalTimerEvents, nGlobalTimersUsed); // Send global timer events (enabled/disabled)
+      PC.readByteArray(SendGlobalTimerEvents, nGlobalTimersUsed); // Send global timer events (enabled/disabled)
     }
     if (nGlobalCountersUsed > 0) {
-      USBCOM.readByteArray(GlobalCounterAttachedEvents, nGlobalCountersUsed); // Get global counter attached events
+      PC.readByteArray(GlobalCounterAttachedEvents, nGlobalCountersUsed); // Get global counter attached events
     }
     if (nConditionsUsed > 0) {
-      USBCOM.readByteArray(ConditionChannels, nConditionsUsed); // Get condition channels
-      USBCOM.readByteArray(ConditionValues, nConditionsUsed); // Get condition values
+      PC.readByteArray(ConditionChannels, nConditionsUsed); // Get condition channels
+      PC.readByteArray(ConditionValues, nConditionsUsed); // Get condition values
     }
-    USBCOM.readByteArray(smGlobalCounterReset, nStates);
-    #if globalTimerByteWidth == 1
-        USBCOM.readByteArray(smGlobalTimerTrig, nStates);
-        USBCOM.readByteArray(smGlobalTimerCancel, nStates);
-        USBCOM.readByteArray(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
-    #elif globalTimerByteWidth == 2
-        USBCOM.readUint16Array(smGlobalTimerTrig, nStates);
-        USBCOM.readUint16Array(smGlobalTimerCancel, nStates);
-        USBCOM.readUint16Array(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
-    #elif globalTimerByteWidth == 4
-        USBCOM.readUint32Array(smGlobalTimerTrig, nStates);
-        USBCOM.readUint32Array(smGlobalTimerCancel, nStates);
-        USBCOM.readUint32Array(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
+    PC.readByteArray(smGlobalCounterReset, nStates);
+    #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
+        PC.readByteArray(smGlobalTimerTrig, nStates);
+        PC.readByteArray(smGlobalTimerCancel, nStates);
+        PC.readByteArray(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
+    #elif GLOBALTIMER_TRIG_BYTEWIDTH == 2
+        PC.readUint16Array(smGlobalTimerTrig, nStates);
+        PC.readUint16Array(smGlobalTimerCancel, nStates);
+        PC.readUint16Array(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
+    #elif GLOBALTIMER_TRIG_BYTEWIDTH == 4
+        PC.readUint32Array(smGlobalTimerTrig, nStates);
+        PC.readUint32Array(smGlobalTimerCancel, nStates);
+        PC.readUint32Array(GlobalTimerOnsetTriggers, nGlobalTimersUsed);
     #endif
     
-    USBCOM.readUint32Array(StateTimers, nStates); // Get state timers
+    PC.readUint32Array(StateTimers, nStates); // Get state timers
     if (nGlobalTimersUsed > 0) {
-      USBCOM.readUint32Array(GlobalTimers, nGlobalTimersUsed); // Get global timers
-      USBCOM.readUint32Array(GlobalTimerOnsetDelays, nGlobalTimersUsed); // Get global timer onset delays
-      USBCOM.readUint32Array(GlobalTimerLoopIntervals, nGlobalTimersUsed); // Get loop intervals
+      PC.readUint32Array(GlobalTimers, nGlobalTimersUsed); // Get global timers
+      PC.readUint32Array(GlobalTimerOnsetDelays, nGlobalTimersUsed); // Get global timer onset delays
+      PC.readUint32Array(GlobalTimerLoopIntervals, nGlobalTimersUsed); // Get loop intervals
     }
     if (nGlobalCountersUsed > 0) {
-      USBCOM.readUint32Array(GlobalCounterThresholds, nGlobalCountersUsed); // Get global counter event count thresholds
+      PC.readUint32Array(GlobalCounterThresholds, nGlobalCountersUsed); // Get global counter event count thresholds
     }
     smaTransmissionConfirmed = true;
   #endif
@@ -2150,9 +2200,9 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
 void startSM() {  
   if (newSMATransmissionStarted){
       if (smaTransmissionConfirmed) {
-        USBCOM.writeByte(1);
+        PC.writeByte(1);
       } else {
-        USBCOM.writeByte(0);
+        PC.writeByte(0);
       }
       newSMATransmissionStarted = false;
   }
@@ -2163,7 +2213,7 @@ void startSM() {
   nEvents = 0;
   SoftEvent = 255; // No event
   MatrixFinished = false;
-  #if LiveTimestamps == 0
+  #if LIVE_TIMESTAMPS == 0
     if (usesFRAM) {
       // Initialize fRAM
       SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
@@ -2181,7 +2231,7 @@ void startSM() {
     }
   #endif
   // Reset event counters
-  for (int i = 0; i < nGlobalCounters; i++) {
+  for (int i = 0; i < MAX_GLOBAL_COUNTERS; i++) {
     GlobalCounterCounts[i] = 0;
   }
   // Read initial state of sensors
@@ -2195,7 +2245,7 @@ void startSM() {
     }
     inputOverrideState[i] = false;
   }
-  for (int i = nInputs; i < nInputs+nGlobalTimers; i++) { // Clear global timer virtual lines
+  for (int i = nInputs; i < nInputs+MAX_GLOBAL_TIMERS; i++) { // Clear global timer virtual lines
     inputState[i] = 0;
   }
   clearSerialBuffers();
