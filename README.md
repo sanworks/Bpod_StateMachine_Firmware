@@ -2,7 +2,7 @@
 
 Arduino firmware for Bpod State Machine (all hardware versions)
 
-Firmware version is indicated by the repository branch (i.e. v18)
+Firmware version is indicated by the repository branch (i.e. v19)
 
 ***IMPORTANT***
 If you are a user installing Bpod state machine firmware, load the correct firmware for your board from the /Preconfigured/ folder.
