@@ -49,7 +49,7 @@
 // 2 = Bpod for BControl on HW 0.7-0.9 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 1.0 (20,2,20)
 
-#define SM_FEATURE_PROFILE 1
+#define SM_FEATURE_PROFILE 3
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5
@@ -672,6 +672,9 @@ void handler() { // This is the timer handler function, which is called every (t
       case '*': // Reset session clock
         resetSessionClock();
         PC.writeByte(1);
+      break;
+      case '$': // Pause ongoing trial (We recommend using computer-side pauses between trials, to keep data uniform)
+        RunningStateMatrix = PC.readByte();
       break;
       case 'G':  // Return timestamp transmission scheme
         PC.writeByte(LIVE_TIMESTAMPS);
