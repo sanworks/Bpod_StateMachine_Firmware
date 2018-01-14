@@ -18,7 +18,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-// Bpod State Machine Firmware Ver. 19
+// Bpod State Machine Firmware Ver. 20
 //
 // SYSTEM SETUP:
 //
@@ -49,7 +49,7 @@
 // 2 = Bpod for BControl on HW 0.7-0.9 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 1.0 (20,2,20)
 
-#define SM_FEATURE_PROFILE 3
+#define SM_FEATURE_PROFILE 1
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5
@@ -74,7 +74,7 @@
 //////////////////////////////////////////
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FIRMWARE_VERSION 19
+#define FIRMWARE_VERSION 20
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -367,6 +367,7 @@ byte SendGlobalTimerEvents[MAX_GLOBAL_TIMERS] = {0}; // true if events are retur
 unsigned long GlobalCounterCounts[MAX_GLOBAL_COUNTERS] = {0}; // Event counters
 byte GlobalCounterAttachedEvents[MAX_GLOBAL_COUNTERS] = {254}; // Event each event counter is attached to
 unsigned long GlobalCounterThresholds[MAX_GLOBAL_COUNTERS] = {0}; // Event counter thresholds (trigger events if crossed)
+boolean GlobalCounterHandled[MAX_GLOBAL_COUNTERS] = {false};
 byte ConditionChannels[MAX_CONDITIONS] = {254}; // Event each channel a condition is attached to
 byte ConditionValues[MAX_CONDITIONS] = {0}; // The value of each condition
 const int MaxTimestamps = 10000;
@@ -1134,8 +1135,9 @@ void handler() { // This is the timer handler function, which is called every (t
       for (int x = 0; x < nGlobalCountersUsed; x++) {
         if (GlobalCounterAttachedEvents[x] < 254) {
           // Check for and handle threshold crossing
-          if (GlobalCounterCounts[x] == GlobalCounterThresholds[x]) {
+          if ((GlobalCounterCounts[x] == GlobalCounterThresholds[x]) && (GlobalCounterHandled[x] == false)) {
             CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+            GlobalCounterHandled[x] = true;
           }
           // Add current event to count (Crossing triggered on next cycle)
           for (int i = 0; i < nCurrentEvents; i++) {
@@ -1586,6 +1588,7 @@ void resetOutputs() {
   }
   for (int i = 0; i < MAX_GLOBAL_COUNTERS; i++) {  
     GlobalCounterCounts[i] = 0;
+    GlobalCounterHandled[i] = false;
   }
   MeaningfulStateTimer = false;
 }
@@ -2236,6 +2239,7 @@ void startSM() {
   // Reset event counters
   for (int i = 0; i < MAX_GLOBAL_COUNTERS; i++) {
     GlobalCounterCounts[i] = 0;
+    GlobalCounterHandled[i] = false;
   }
   // Read initial state of sensors
   for (int i = BNCInputPos; i < nInputs; i++) {
