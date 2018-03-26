@@ -2,7 +2,7 @@
   ----------------------------------------------------------------------------
 
   This file is part of the Sanworks Bpod_Gen2 repository
-  Copyright (C) 2017 Sanworks LLC, Stony Brook, New York, USA
+  Copyright (C) 2018 Sanworks LLC, Stony Brook, New York, USA
 
   ----------------------------------------------------------------------------
 
@@ -18,7 +18,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-// Bpod State Machine Firmware Ver. 20
+// Bpod State Machine Firmware Ver. 21
 //
 // SYSTEM SETUP:
 //
@@ -74,7 +74,7 @@
 //////////////////////////////////////////
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FIRMWARE_VERSION 20
+#define FIRMWARE_VERSION 21
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -326,7 +326,6 @@ byte SerialMessageMatrix[MaxStates+1][nSerialChannels][3]; // Stores a 3-byte se
 byte SerialMessage_nBytes[MaxStates+1][nSerialChannels] = {1}; // Stores the length of each serial message
 boolean ModuleConnected[nSerialChannels] = {false}; // true for each channel if a module is connected, false otherwise
 byte SyncChannelOriginalType = 0; // Stores sync channel's original hardware type
-uint32_t PWMChannel[nOutputs] = {0}; // Stores ARM PWM channel for each PWM output pin (assigned in advance in setup, to speed PWM writes)
 
 // Global timer triggers (data type dependent on number of global timers; using fewer = faster SM switching, extra memory for other configs)
 #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
@@ -398,7 +397,7 @@ byte RunningStateMatrix = 0; // 1  if state matrix is running
 byte firstLoop= 0; // 1 if first timer callback in state matrix
 int Ev = 0; // Index of current event
 byte overrideChan = 0; // Output channel being manually overridden
-byte overrideChanState = 0; // State of channel being manually overridden
+uint16_t overrideChanState = 0; // State of channel being manually overridden (16-bit to hold PWM value = 256 on Teensy if necessary)
 byte nOverrides = 0; // Number of overrides on a line of the state matrix (for compressed transmission scheme)
 byte col = 0; byte val = 0; // col and val are used in state matrix compression scheme
 const uint16_t StateMatrixBufferSize = 50000;
@@ -559,8 +558,8 @@ for (int i = 0; i < nOutputs; i++) {
       case 'P':
         pinMode(OutputCh[i], OUTPUT);
         analogWrite(OutputCh[i], 0);
-        #if MACHINE_TYPE < 3
-          PWMChannel[i] = g_APinDescription[OutputCh[i]].ulPWMChannel;
+        #if MACHINE_TYPE == 3
+          analogWriteFrequency(OutputCh[i],50000); // Set PWM cycle frequency of channel (and others on same port) to 50kHz
         #endif
       break;
     }
@@ -799,7 +798,7 @@ void handler() { // This is the timer handler function, which is called every (t
             outputOverrideState[overrideChan] = overrideChanState;
           break;
           case 'P':
-            analogWrite(OutputCh[overrideChan], overrideChanState);
+            pwmWrite(OutputCh[overrideChan], overrideChanState);
             if (overrideChanState > 0) {
               outputOverrideState[overrideChan] = true;
             } else {
@@ -1333,7 +1332,7 @@ void ResetSyncLine() {
   if (!usesSPISync) {
     SyncState = 0;
     if (SyncChannelOriginalType == 'P') {
-      analogWrite(SyncChannelHW, SyncState);
+      pwmWrite(SyncChannelHW, SyncState);
     } else {
       digitalWriteDirect(SyncChannelHW, SyncState);     
     }
@@ -1348,7 +1347,7 @@ void SyncWrite() {
         SyncState = 0;
       }
       if (SyncChannelOriginalType == 'P') {
-        analogWrite(SyncChannelHW, SyncState*255);
+        pwmWrite(SyncChannelHW, SyncState*255);
       } else {
         digitalWriteDirect(SyncChannelHW, SyncState);     
       }
@@ -1507,12 +1506,7 @@ void setStateOutputs(byte State) {
         break;
         case 'P':
           if (outputOverrideState[i] == 0) {   
-            #if MACHINE_TYPE < 3
-              //Arduino Due PERFORMANCE HACK: the next line is equivalent to: analogWrite(OutputCh[i], OutputStateMatrix[State][i]); 
-              PWMC_SetDutyCycle(PWM_INTERFACE, PWMChannel[i], OutputStateMatrix[State][i]);
-            #else
-              analogWrite(OutputCh[i], OutputStateMatrix[State][i]); 
-            #endif
+             pwmWrite(OutputCh[i], OutputStateMatrix[State][i]);
           }
         break;
      }
@@ -1575,7 +1569,7 @@ void resetOutputs() {
         outputState[i] = 0;
       break;
       case 'P':
-        analogWrite(OutputCh[i], 0); 
+        pwmWrite(OutputCh[i], 0); 
         outputOverrideState[i] = 0; 
       break;
     }
@@ -1632,7 +1626,7 @@ void digitalWriteDirect(int pin, boolean val) { // >10x Faster than digitalWrite
     if (val) g_APinDescription[pin].pPort -> PIO_SODR = g_APinDescription[pin].ulPin;
     else    g_APinDescription[pin].pPort -> PIO_CODR = g_APinDescription[pin].ulPin;
   #else
-    digitalWrite(pin, val);
+    digitalWriteFast(pin, val);
   #endif
 }
 
@@ -1640,10 +1634,22 @@ byte digitalReadDirect(int pin) { // >10x Faster than digitalRead(), specific to
   #if MACHINE_TYPE < 3
     return !!(g_APinDescription[pin].pPort -> PIO_PDSR & g_APinDescription[pin].ulPin);
   #else
-    return digitalRead(pin);
+    return digitalReadFast(pin);
   #endif
 }
 
+void pwmWrite(byte channel, byte value) {
+  #if MACHINE_TYPE < 3
+    analogWrite(channel, value); 
+  #else
+    if (value == 255) {
+      analogWrite(channel, 256); // On Teensy boards, 256 = always high
+    } else {
+      analogWrite(channel, value); 
+    }
+  #endif
+}
+            
 void setGlobalTimerChannel(byte timerChan, byte op) {
   byte thisChannel = 0; 
   byte thisMessage = 0;
@@ -1712,7 +1718,7 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
     break;
     case 'P': // Port (PWM / LED)
       if (op == 1) {
-        analogWrite(OutputCh[thisChannel], GlobalTimerOnMessage[timerChan]);
+        pwmWrite(OutputCh[thisChannel], GlobalTimerOnMessage[timerChan]);
         outputOverrideState[thisChannel] = 1;
       } else {
         analogWrite(OutputCh[thisChannel], 0);
