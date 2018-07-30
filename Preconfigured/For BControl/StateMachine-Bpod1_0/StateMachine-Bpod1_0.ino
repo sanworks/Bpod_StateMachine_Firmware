@@ -36,9 +36,9 @@
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-0.9 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
+// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
 
-#define MACHINE_TYPE 1 
+#define MACHINE_TYPE 2 
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -51,7 +51,7 @@
 // 2 = Bpod for BControl on HW 0.7-1.0 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 2.0 (20,2,20)
 
-#define SM_FEATURE_PROFILE 0
+#define SM_FEATURE_PROFILE 2
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5

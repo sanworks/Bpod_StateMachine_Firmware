@@ -18,7 +18,9 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-// Bpod State Machine Firmware Ver. 21
+// #######################################
+// # Bpod State Machine Firmware Ver. 22 #
+// #######################################
 //
 // SYSTEM SETUP:
 //
@@ -44,10 +46,10 @@
 // Profile of internal state machine features (max numbers of global timers, counters and conditions).
 // Declaring more of these requires more MCU sRAM, often in ways that are non-linear. It is safe to add 
 // profiles here to reallocate memory as needed, at the line beginning: #if SM_FEATURE_PROFILE == 0 
-// 0 = Bpod Native on HW 0.5-0.9 (5,5,5)
+// 0 = Bpod Native on HW 0.5-1.0 (5,5,5)
 // 1 = Bpod Native on HW 2.0 (16,8,16)
-// 2 = Bpod for BControl on HW 0.7-0.9 (8,2,8) 
-// 3 = Bpod for Bcontrol on HW 1.0 (20,2,20)
+// 2 = Bpod for BControl on HW 0.7-1.0 (8,2,8) 
+// 3 = Bpod for Bcontrol on HW 2.0 (20,2,20)
 
 #define SM_FEATURE_PROFILE 2
 
@@ -74,7 +76,7 @@
 //////////////////////////////////////////
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FIRMWARE_VERSION 21
+#define FIRMWARE_VERSION 22
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -382,6 +384,7 @@ uint32_t lastTimeMicros = 0; // Last time read (for detecting  32-bit clock roll
 unsigned long nCyclesCompleted= 0; // Number of HW timer cycles since state matrix started
 unsigned long StateStartTime = 0; // Session Start Time
 unsigned long NextLEDBrightnessAdjustTime = 0; // Used to fade blue light when disconnected
+unsigned long LEDTime = 0; // Used to determine when to fade the indicator light
 unsigned long CurrentTime = 0; // Current time (units = timer cycles since start; used to control state transitions)
 unsigned long TimeFromStart = 0;
 uint64_t sessionStartTimeMicros = 0;
@@ -411,6 +414,7 @@ boolean smaPending = false; // If a state matrix is ready to read into the seria
 boolean smaReady2Load = false; // If a state matrix was read into the serial buffer and is ready to read into sma vars with LoadStateMatrix()
 boolean runFlag = false; // True if a command to run a state matrix arrives while an SM transmission is ongoing. Set to false once new SM starts.
 uint16_t nSMBytesRead = 0; // For state matrix transmission during trial, where bytes transmitted must be tracked across timer interrupts
+boolean startFlag = false; // True if a USB 'R' code was received in a timer callback. Used to start the state matrix from the main loop.
 
 union {
   byte Bytes[maxCurrentEvents*4];
@@ -614,6 +618,10 @@ void loop() {
     nMicrosRollovers++;
   }
   lastTimeMicros = currentTimeMicros;
+  if (startFlag == true) {
+     startSM();
+     startFlag = false;
+  }
 }
 
 void handler() { // This is the timer handler function, which is called every (timerPeriod) us
@@ -629,7 +637,7 @@ void handler() { // This is the timer handler function, which is called every (t
   if (runFlag) { // If an SM run command was delayed because an SM transmission is ongoing
     if (smaTransmissionConfirmed) {
       runFlag = false;
-      startSM();
+      startFlag == true;
     }
   }
   if (getModuleInfo) { // If a request was sent for connected modules to return self description (request = byte 255)
@@ -816,10 +824,10 @@ void handler() { // This is the timer handler function, which is called every (t
       case 'Z':  // Bpod governing machine has closed the client program
         disableModuleRelays();
         connectionState = 0;
-        connectionState = 0;
         PC.writeByte('1');
-        updateStatusLED(0);
         DiscoveryByteTime = millis();
+        NextLEDBrightnessAdjustTime = DiscoveryByteTime;
+        updateStatusLED(0);
         #if MACHINE_TYPE == 3
           digitalWrite(ValveEnablePin, LOW); // Disable valve driver
         #endif
@@ -948,13 +956,13 @@ void handler() { // This is the timer handler function, which is called every (t
             loadStateMatrix(); // Loads the state matrix from the buffer into the relevant variables
             if (RunStateMatrixASAP) {
               RunStateMatrixASAP = false;
-              startSM(); // Start the state matrix without waiting for an explicit 'R' command.
+              startFlag = true; // Start the state matrix without waiting for an explicit 'R' command.
             }
           }
         }
       break;
       case 'R':  // Run State Machine
-        startSM();
+        startFlag = true;
       break;
       case 'X':   // Exit state matrix and return data
         MatrixFinished = true;
@@ -964,16 +972,19 @@ void handler() { // This is the timer handler function, which is called every (t
     } // End switch commandbyte
   } // End SerialUSB.available
   if (RunningStateMatrix) {
-    if (firstLoop == 1) {
+    if (firstLoop == 1) { 
       firstLoop = 0;
+      #if MACHINE_TYPE == 3
+        delayMicroseconds(5); // Delay so that the i/o + timing matches subsequent loops (which include ~5us of processing first)
+      #else
+        delayMicroseconds(25); // Delay so that the i/o + timing matches subsequent loops (which include ~25us of processing first)
+      #endif
       MatrixStartTimeMicros = sessionTimeMicros(); 
       timeBuffer.uint64[0] = MatrixStartTimeMicros;
       PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
       SyncWrite();
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
     } else {
-      //nCurrentEvents = 0;
-      //CurrentEvent[0] = 254; // Event 254 = No event
       CurrentTime++;
       for (int i = BNCInputPos; i < nInputs; i++) {
           if (inputEnabled[i] && !inputOverrideState[i]) {
@@ -1363,17 +1374,17 @@ void SyncRegWrite(int value) {
 }
 void updateStatusLED(int Mode) {
   if (STATUS_LED_ENABLED) {
-    CurrentTime = millis();
+    LEDTime = millis();
     switch (Mode) {
-      case 0: {
+      case 0: { // Clear
           analogWrite(RedLEDPin, 0);
           digitalWriteDirect(GreenLEDPin, 0);
           analogWrite(BlueLEDPin, 0);
         } break;
-      case 1: { // Waiting for matrix
+      case 1: { // Disconnected from PC software (Blue, fading)
           if (connectionState == 0) {
-            if (CurrentTime > NextLEDBrightnessAdjustTime) {
-              NextLEDBrightnessAdjustTime = CurrentTime + LEDBrightnessAdjustInterval;
+            if (LEDTime > NextLEDBrightnessAdjustTime) {
+              NextLEDBrightnessAdjustTime = LEDTime + LEDBrightnessAdjustInterval;
               if (LEDBrightnessAdjustDirection == 1) {
                 if (LEDBrightness < 255) {
                   LEDBrightness = LEDBrightness + 1;
@@ -1389,18 +1400,18 @@ void updateStatusLED(int Mode) {
                 }
               }
               if (LEDBrightnessAdjustDirection == 2) {
-                NextLEDBrightnessAdjustTime = CurrentTime + 500;
+                NextLEDBrightnessAdjustTime = LEDTime + 500;
                 LEDBrightnessAdjustDirection = 1;
               }
               analogWrite(BlueLEDPin, LEDBrightness);
             }
           }
         } break;
-      case 2: {
+      case 2: { // Connected, waiting for state machine description (Green)
           analogWrite(BlueLEDPin, 0);
           digitalWriteDirect(GreenLEDPin, 1);
         } break;
-      case 3: {
+      case 3: { // Running state machine (Orange)
           digitalWrite(GreenLEDPin, HIGH);
           analogWrite(BlueLEDPin, 0);
           analogWrite(RedLEDPin, 128);
