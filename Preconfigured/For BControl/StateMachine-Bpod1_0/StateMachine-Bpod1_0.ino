@@ -1532,6 +1532,7 @@ void setStateOutputs(byte State) {
   if (CurrentCounter > 0) {
     CurrentCounter = CurrentCounter - 1; // Convert to 0 index
     GlobalCounterCounts[CurrentCounter] = 0;
+    GlobalCounterHandled[CurrentCounter] = false;
   }
 
   // Enable state timer only if handled

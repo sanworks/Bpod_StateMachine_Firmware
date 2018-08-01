@@ -36,7 +36,7 @@
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-0.9 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
+// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
 
 #define MACHINE_TYPE 3 
 
@@ -1532,6 +1532,7 @@ void setStateOutputs(byte State) {
   if (CurrentCounter > 0) {
     CurrentCounter = CurrentCounter - 1; // Convert to 0 index
     GlobalCounterCounts[CurrentCounter] = 0;
+    GlobalCounterHandled[CurrentCounter] = false;
   }
 
   // Enable state timer only if handled
