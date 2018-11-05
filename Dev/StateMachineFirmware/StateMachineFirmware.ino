@@ -97,10 +97,6 @@
 //          Board configuration          /
 //////////////////////////////////////////
 
-// Board configuration (universal)
-#define STATUS_LED_ENABLED 1 // Set to 0 to disable the board's red/green/blue status LED
-
-// Board configuration (machine-specific)
 #if MACHINE_TYPE < 3
   #include "DueTimer.h"
 #endif
@@ -254,6 +250,7 @@ byte ValvePos = 0;
 // Parameters
 
 const unsigned long ModuleIDTimeout = 100; // timeout for modules to respond to byte 255 (units = 100us cycles). Byte 255 polls for module hardware information
+boolean statusLEDEnabled = true; // Set to false to disable status LED
 
 // Initialize system state vars: 
 byte outputState[nOutputs] = {0}; // State of outputs
@@ -679,6 +676,19 @@ void handler() { // This is the timer handler function, which is called every (t
       break;
       case '*': // Reset session clock
         resetSessionClock();
+        PC.writeByte(1);
+      break;
+      case ':': // Enable/Disable status LED
+        statusLEDEnabled = PC.readByte();
+        if (statusLEDEnabled) {
+          if (connectionState == 1) {
+            updateStatusLED(2);
+          } else {
+            updateStatusLED(1);
+          }
+        } else {
+          updateStatusLED(0);
+        }
         PC.writeByte(1);
       break;
       case '$': // Pause ongoing trial (We recommend using computer-side pauses between trials, to keep data uniform)
@@ -1373,7 +1383,7 @@ void SyncRegWrite(int value) {
   }
 }
 void updateStatusLED(int Mode) {
-  if (STATUS_LED_ENABLED) {
+  if (statusLEDEnabled) {
     LEDTime = millis();
     switch (Mode) {
       case 0: { // Clear
@@ -2283,4 +2293,3 @@ void startSM() {
   RunningStateMatrix = 1;
   firstLoop = 1;
 }
-
