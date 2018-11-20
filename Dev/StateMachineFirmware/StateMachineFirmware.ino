@@ -1427,6 +1427,10 @@ void updateStatusLED(int Mode) {
           analogWrite(RedLEDPin, 128);
         } break;
     }
+  } else {
+    analogWrite(RedLEDPin, 0);
+    digitalWriteDirect(GreenLEDPin, 0);
+    analogWrite(BlueLEDPin, 0);
   }
 }
 
