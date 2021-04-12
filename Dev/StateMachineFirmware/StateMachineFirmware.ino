@@ -36,9 +36,9 @@
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0 (Teensy 3.6)
+// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0-2.3 (Teensy 3.6); 4 = Bpod 2+ r1.0
 
-#define MACHINE_TYPE 3 
+#define MACHINE_TYPE 4 
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -47,9 +47,9 @@
 // Declaring more of these requires more MCU sRAM, often in ways that are non-linear. It is safe to add 
 // profiles here to reallocate memory as needed, at the line beginning: #if SM_FEATURE_PROFILE == 0 
 // 0 = Bpod Native on HW 0.5-1.0 (5,5,5)
-// 1 = Bpod Native on HW 2.0 (16,8,16)
+// 1 = Bpod Native on HW 2.0-2.3 and 2+ (16,8,16)
 // 2 = Bpod for BControl on HW 0.7-1.0 (8,2,8) 
-// 3 = Bpod for Bcontrol on HW 2.0 (20,2,20)
+// 3 = Bpod for Bcontrol on HW 2.0-2.3 (20,2,20)
 
 #define SM_FEATURE_PROFILE 1
 
@@ -107,6 +107,10 @@
   #include "ArCOMvE.h" // Special variant of ArCOM specialized for transmission via Bpod Ethernet module
 #endif
 
+#if MACHINE_TYPE == 4
+  #include "AD5592R.h" // Library for the AD5592R Analog + Digital interface IC, used for FlexI/O channels
+#endif 
+
 #if MACHINE_TYPE == 1
   ArCOM PC(SerialUSB); // Creates an ArCOM object called PC, wrapping SerialUSB (or in some cases, a different serial channel with an Ethernet link to the PC)
   ArCOM Module1(Serial1); // Creates an ArCOM object called Module1, wrapping Serial1
@@ -129,13 +133,18 @@
   #if ETHERNET_COM == 0 
     ArCOM Module5(Serial5); 
   #endif
+#elif MACHINE_TYPE == 4
+  ArCOM PC(SerialUSB); 
+  ArCOM Module1(Serial1); 
+  ArCOM Module2(Serial2);
+  ArCOM Module3(Serial6);
 #endif
 
 ////////////////////////////////////////
 // State machine hardware description  /
 ////////////////////////////////////////
 // Two pairs of arrays describe the hardware as it appears to the state machine: inputHW / inputCh, and outputHW / outputCh.
-// In these arrays, the first row codes for hardware type. U = UART, X = USB, S = SPI,  D = digital, B = BNC (digital/inverted), W = Wire (digital/inverted), V = Valve (digital) 
+// In these arrays, the first row codes for hardware type. U = UART, X = USB, S = SPI,  D = digital, B = BNC (digital/inverted), W = Wire (digital/inverted), V = Valve (digital), F = Flex I/O (AD5592r)
 // P = port (digital channel if input, PWM channel if output). Channels must be listed IN THIS ORDER (this constraint allows efficient code at runtime). 
 // The digital,BNC or wire channel currently replaced by 'Y' is the sync channel (none by default).
 // The second row lists the physical input and output channels on Arduino for B,W,P, and the SPI CS pin is listed for S. Use 0 for UART and USB.
@@ -150,7 +159,7 @@
     byte InputCh[] = {0,0,0,0,10,11,31,29,28,30,32,34,36,38,40,42};                                         
     byte OutputHW[] = {'U','U','U','X','B','B','W','W','W','P','P','P','P','P','P','P','P','V','V','V','V','V','V','V','V'};
     byte OutputCh[] = {0,0,0,0,25,24,43,41,39,9,8,7,6,5,4,3,2,22,22,22,22,22,22,22,22};  
-#elif MACHINE_TYPE == 3 // Bpod State Machine r2.0+
+#elif MACHINE_TYPE == 3 // Bpod State Machine r2.0-2.3
   #if ETHERNET_COM == 0
     byte InputHW[] = {'U','U','U','U','U','X','B','B','P','P','P','P'};
     byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
@@ -162,6 +171,11 @@
     byte OutputHW[] = {'U','U','U','U','X','B','B','P','P','P','P','V','V','V','V'};
     byte OutputCh[] = {0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
   #endif
+#elif MACHINE_TYPE == 4 // Bpod State Machine 2+ r1.0
+    byte InputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P'};
+    byte InputCh[] = {0,0,0,0,0,0,0,0,6,5,39,38,17,16,41};                                         
+    byte OutputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P','V','V','V','V','V'};
+    byte OutputCh[] = {0,0,0,0,0,0,0,0,4,3,36,37,15,14,18,20,19,21,22,23};  
 #endif
 
 // State machine meta information
@@ -177,7 +191,7 @@ const byte nOutputs = sizeof(OutputHW);
   const byte maxSerialEvents = 60;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
-#elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0+)
+#elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0-2.3)
   #if ETHERNET_COM == 0
     const byte nSerialChannels = 6; 
     const byte maxSerialEvents = 90;
@@ -185,6 +199,11 @@ const byte nOutputs = sizeof(OutputHW);
     const byte nSerialChannels = 5; 
     const byte maxSerialEvents = 75;
   #endif
+  const int MaxStates = 256;
+  const int SerialBaudRate = 1312500;
+#elif MACHINE_TYPE == 4  // Teensy 4.1 based state machines (r2+ v1.0)
+  const byte nSerialChannels = 4; 
+  const byte maxSerialEvents = 60;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
 #endif
@@ -203,6 +222,20 @@ uint16_t timerPeriod = 100; // Hardware timer period, in microseconds (state mac
 byte nGlobalTimersUsed = MAX_GLOBAL_TIMERS;
 byte nGlobalCountersUsed = MAX_GLOBAL_COUNTERS;
 byte nConditionsUsed = MAX_CONDITIONS;
+
+// flexIO vars
+#if MACHINE_TYPE == 4
+  const byte nFlexIO = 4;
+  AD5592R FlexIO(9); // Create FlexIO, an AD5592R object with CS on Teensy pin 9
+  byte flexIOChannelType[nFlexIO] = {0,0,1,1}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC
+  uint16_t flexIOValues[nFlexIO] = {0}; // Stores values read from or to be written to FlexIO channels
+  boolean flexIO_updateDIflag = false; // Flags if updates are required for each channel type
+  boolean flexIO_updateDOflag = false;
+  boolean flexIO_updateAIflag = false;
+  boolean flexIO_updateAOflag = false;
+#else
+  const byte nFlexIO = 0;
+#endif
                          
 // Other hardware pin mapping
 #if MACHINE_TYPE == 1
@@ -221,8 +254,14 @@ byte nConditionsUsed = MAX_CONDITIONS;
   byte BlueLEDPin = 35;
   byte ValveEnablePin = 19;
   byte valveCSChannel = 0;
+#elif MACHINE_TYPE == 4
+  byte GreenLEDPin = 35;
+  byte RedLEDPin = 2;
+  byte BlueLEDPin = 33;
+  byte valveCSChannel = 0;
 #endif
 
+// fRAM vars
 byte fRAMcs = 1;
 byte fRAMhold = A3;
 byte SyncRegisterLatch = 23;
@@ -232,6 +271,7 @@ boolean usesFRAM = false;
 boolean usesSPISync = false;
 boolean usesSPIValves = false;
 boolean usesUARTInputs = false;
+boolean usesFlexIO = false;
 boolean isolatorHigh = 0;
 boolean isolatorLow = 0;
 
@@ -240,12 +280,15 @@ byte USBInputPos = 0;
 byte BNCInputPos = 0;
 byte WireInputPos = 0;
 byte PortInputPos = 0;
+byte FlexInputPos = 0;
 byte USBOutputPos = 0;
 byte SPIOutputPos = 0;
 byte BNCOutputPos = 0;
 byte WireOutputPos = 0;
 byte PortOutputPos = 0;
+byte FlexOutputPos = 0;
 byte ValvePos = 0;
+byte DigitalInputPos = 0; // Beginning of digital input channels
 
 // Parameters
 
@@ -309,7 +352,7 @@ byte LEDBrightness = 0;
 byte serialByteBuffer[4] = {0}; // Stores 1-3 byte messages transmitted as output actions of states
 
 // Vars for state machine definitions. Each matrix relates each state to some inputs or outputs.
-const byte InputMatrixSize = maxSerialEvents + nDigitalInputs*2;
+const byte InputMatrixSize = maxSerialEvents + (nDigitalInputs*2);
 byte InputStateMatrix[MaxStates+1][InputMatrixSize] = {0}; // Matrix containing all of Bpod's digital inputs and corresponding state transitions
 byte StateTimerMatrix[MaxStates+1] = {0}; // Matrix containing states to move to if the state timer elapses
 const byte OutputMatrixSize = nOutputs;
@@ -347,8 +390,6 @@ byte GlobalTimerEndPos = GlobalTimerStartPos + MAX_GLOBAL_TIMERS;
 byte GlobalCounterPos = GlobalTimerEndPos + MAX_GLOBAL_TIMERS; // First global counter event code
 byte ConditionPos = GlobalCounterPos + MAX_GLOBAL_COUNTERS; // First condition event code
 byte TupPos = ConditionPos+MAX_CONDITIONS; // First Jump event code
-byte DigitalInputPos = maxSerialEvents;
-
 
 byte GlobalTimerChannel[MAX_GLOBAL_TIMERS] = {254}; // Channel code for global timer onset/offset.
 byte GlobalTimerOnMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer is active (if channel is serial).
@@ -430,72 +471,104 @@ union {
     uint64_t uint64[2];
 } timeBuffer; // For time transmission on trial end
 
-#if MACHINE_TYPE == 3
+#if MACHINE_TYPE > 2
   IntervalTimer hardwareTimer;
 #endif
 
 
 void setup() {
-// Resolve hardware peripherals from machine type
-if (MACHINE_TYPE == 1) {
-    usesFRAM = false;
-    usesSPISync = true;
-    usesSPIValves = true;
-    usesUARTInputs = false;
-    isolatorHigh = 1;
-    isolatorLow = 0;
-} else if (MACHINE_TYPE == 2) {
-    usesFRAM = true;
-    usesSPISync = false;
-    usesSPIValves = true;
-    usesUARTInputs = true;
-    isolatorHigh = 0;
-    isolatorLow = 1;
-} else if (MACHINE_TYPE == 3) {
-    usesFRAM = false;
-    usesSPISync = false;
-    usesSPIValves = false;
-    usesUARTInputs = true;
-    isolatorHigh = 0;
-    isolatorLow = 1;
-}
-// Find Bookmarks (positions of channel types in hardware description vectors)
-for (int i = 0; i < nInputs; i++) {
-  if ((InputHW[i] == 'X') && (USBInputPos == 0)) {
-    USBInputPos = i;
+  // Resolve hardware peripherals from machine type
+  if (MACHINE_TYPE == 1) {
+      usesFRAM = false;
+      usesSPISync = true;
+      usesSPIValves = true;
+      usesUARTInputs = false;
+      usesFlexIO = false;
+      isolatorHigh = 1;
+      isolatorLow = 0;
+  } else if (MACHINE_TYPE == 2) {
+      usesFRAM = true;
+      usesSPISync = false;
+      usesSPIValves = true;
+      usesUARTInputs = true;
+      usesFlexIO = false;
+      isolatorHigh = 0;
+      isolatorLow = 1;
+  } else if (MACHINE_TYPE == 3) {
+      usesFRAM = false;
+      usesSPISync = false;
+      usesSPIValves = false;
+      usesUARTInputs = true;
+      usesFlexIO = false;
+      isolatorHigh = 0;
+      isolatorLow = 1;
+  } else if (MACHINE_TYPE == 4) {
+      usesFRAM = false;
+      usesSPISync = false;
+      usesSPIValves = false;
+      usesUARTInputs = true;
+      usesFlexIO = true;
+      isolatorHigh = 0;
+      isolatorLow = 1;
   }
-  if ((InputHW[i] == 'B') && (BNCInputPos == 0)) {
-    BNCInputPos = i;
+  // Find Bookmarks (positions of channel types in hardware description vectors)
+  for (int i = 0; i < nInputs; i++) {
+    if ((InputHW[i] == 'X') && (USBInputPos == 0)) {
+      USBInputPos = i;
+    }
+    if ((InputHW[i] == 'B') && (BNCInputPos == 0)) {
+      BNCInputPos = i;
+    }
+    if ((InputHW[i] == 'W') && (WireInputPos == 0)) {
+      WireInputPos = i;
+    }
+    if ((InputHW[i] == 'P') && (PortInputPos == 0)) {
+      PortInputPos = i;
+    }
+    if ((InputHW[i] == 'F') && (FlexInputPos == 0)) {
+      FlexInputPos = i;
+    }
   }
-  if ((InputHW[i] == 'W') && (WireInputPos == 0)) {
-    WireInputPos = i;
+  DigitalInputPos = BNCInputPos;
+  #if MACHINE_TYPE == 4
+      DigitalInputPos = FlexInputPos;
+  #endif
+  
+  for (int i = 0; i < nOutputs; i++) {
+    if ((OutputHW[i] == 'X') && (USBOutputPos == 0)) {
+      USBOutputPos = i;
+    }
+    if ((OutputHW[i] == 'B') && (BNCOutputPos == 0)) {
+      BNCOutputPos = i;
+    }
+    if ((OutputHW[i] == 'W') && (WireOutputPos == 0)) {
+      WireOutputPos = i;
+    }
+    if ((OutputHW[i] == 'P') && (PortOutputPos == 0)) {
+      PortOutputPos = i;
+    }
+    if ((OutputHW[i] == 'V') && (ValvePos == 0)) {
+      ValvePos = i;
+    }
+    if ((OutputHW[i] == 'F') && (FlexOutputPos == 0)) {
+      FlexOutputPos = i;
+    }
   }
-  if ((InputHW[i] == 'P') && (PortInputPos == 0)) {
-    PortInputPos = i;
-  }
-}
-for (int i = 0; i < nOutputs; i++) {
-  if ((OutputHW[i] == 'X') && (USBOutputPos == 0)) {
-    USBOutputPos = i;
-  }
-  if ((OutputHW[i] == 'B') && (BNCOutputPos == 0)) {
-    BNCOutputPos = i;
-  }
-  if ((OutputHW[i] == 'W') && (WireOutputPos == 0)) {
-    WireOutputPos = i;
-  }
-  if ((OutputHW[i] == 'P') && (PortOutputPos == 0)) {
-    PortOutputPos = i;
-  }
-  if ((OutputHW[i] == 'V') && (ValvePos == 0)) {
-    ValvePos = i;
-  }
-}  
+  
+  SPI.begin();
+  #if MACHINE_TYPE == 4
+    for (int i = 0; i<nFlexIO; i++) {
+      FlexIO.setChannelType(i, flexIOChannelType[i]);
+    }
+    FlexIO.updateChannelTypes();
+  #endif
+  
   // Configure input channels
   Byte1 = 0;
   for (int i = 0; i < nInputs; i++) {
     switch (InputHW[i]) {
       case 'D':
+      case 'F':
         inputState[i] = 0;
         lastInputState[i] = 0;
         inputEnabled[i] = 1;
@@ -525,9 +598,13 @@ for (int i = 0; i < nOutputs; i++) {
             case 1:
               Serial2.begin(SerialBaudRate); Byte1++;
             break;
-            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+            #if MACHINE_TYPE == 2 || Machine_TYPE == 3
                 case 2:
                   Serial3.begin(SerialBaudRate); Byte1++;
+                break;
+            #elif MACHINE_TYPE == 4
+                case 2:
+                  Serial6.begin(SerialBaudRate); Byte1++;
                 break;
             #endif  
             #if MACHINE_TYPE == 3
@@ -559,7 +636,7 @@ for (int i = 0; i < nOutputs; i++) {
       case 'P':
         pinMode(OutputCh[i], OUTPUT);
         analogWrite(OutputCh[i], 0);
-        #if MACHINE_TYPE == 3
+        #if MACHINE_TYPE > 2 
           analogWriteFrequency(OutputCh[i],50000); // Set PWM cycle frequency of channel (and others on same port) to 50kHz
         #endif
       break;
@@ -588,7 +665,6 @@ for (int i = 0; i < nOutputs; i++) {
      digitalWrite(SyncRegisterLatch, LOW);
   }
   CurrentEventBuffer[0] = 1;
-  SPI.begin();
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
   #if MACHINE_TYPE < 3
     Timer3.attachInterrupt(handler); // Timer3 is Arduino Due's hardware timer, which will trigger the function "handler" precisely every (timerPeriod) us
@@ -643,7 +719,7 @@ void handler() { // This is the timer handler function, which is called every (t
       getModuleInfo = false; 
       relayModuleInfo(Module1, 1); // Function transmits 0 if no module replied, 1 if found, followed by length of description(bytes), then description
       relayModuleInfo(Module2, 2);
-      #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+      #if MACHINE_TYPE > 1
         relayModuleInfo(Module3, 3);
       #endif
       #if MACHINE_TYPE == 3
@@ -722,7 +798,7 @@ void handler() { // This is the timer handler function, which is called every (t
         while (Module2.available() > 0 ) {
            Module2.readByte();
         }
-        #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+        #if MACHINE_TYPE > 1
           while (Module3.available() > 0 ) {
             Module3.readByte();
           }
@@ -739,7 +815,7 @@ void handler() { // This is the timer handler function, which is called every (t
         #endif
         Module1.writeByte(255);
         Module2.writeByte(255);
-        #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+        #if MACHINE_TYPE > 1
           Module3.writeByte(255);
         #endif
         #if MACHINE_TYPE == 3
@@ -796,6 +872,21 @@ void handler() { // This is the timer handler function, which is called every (t
       }
       PC.writeByte(1);
       break;
+      case 'Q': // Set FlexIO channel configuration
+        #if MACHINE_TYPE == 4
+          PC.readByteArray(flexIOChannelType, nFlexIO);
+          for (int i = 0; i<nFlexIO; i++) {
+            FlexIO.setChannelType(i, flexIOChannelType[i]);
+          }
+          FlexIO.updateChannelTypes();
+          PC.writeByte(1);
+        #endif
+      break;
+      case 'q': // Return current FlexIO channel configuration
+        #if MACHINE_TYPE == 4
+          PC.writeByteArray(flexIOChannelType,nFlexIO);
+        #endif
+      break;
       case 'O':  // Override digital hardware state
         overrideChan = PC.readByte();
         overrideChanState = PC.readByte();
@@ -831,7 +922,7 @@ void handler() { // This is the timer handler function, which is called every (t
         Byte2 = (Byte2 == logicHigh[Byte1]);
         PC.writeByte(Byte2);
       break;
-      case 'Z':  // Bpod governing machine has closed the client program
+      case 'Z':  // Cleanup - PC has closed the client program
         disableModuleRelays();
         connectionState = 0;
         PC.writeByte('1');
@@ -859,7 +950,7 @@ void handler() { // This is the timer handler function, which is called every (t
             PC.readByteArray(SerialRelayBuffer, nBytes);
             Module2.writeByteArray(SerialRelayBuffer, nBytes);
           break;
-          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          #if MACHINE_TYPE > 1
             case 2:
               PC.readByteArray(SerialRelayBuffer, nBytes);
               Module3.writeByteArray(SerialRelayBuffer, nBytes);
@@ -893,7 +984,7 @@ void handler() { // This is the timer handler function, which is called every (t
           case 1:
             Module2.writeByteArray(serialByteBuffer, Byte3);
           break;
-          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          #if MACHINE_TYPE > 1
             case 2:
               Module3.writeByteArray(serialByteBuffer, Byte3);
             break;
@@ -984,7 +1075,7 @@ void handler() { // This is the timer handler function, which is called every (t
   if (RunningStateMatrix) {
     if (firstLoop == 1) { 
       firstLoop = 0;
-      #if MACHINE_TYPE == 3
+      #if MACHINE_TYPE > 2
         delayMicroseconds(5); // Delay so that the i/o + timing matches subsequent loops (which include ~5us of processing first)
       #else
         delayMicroseconds(25); // Delay so that the i/o + timing matches subsequent loops (which include ~25us of processing first)
@@ -997,10 +1088,20 @@ void handler() { // This is the timer handler function, which is called every (t
     } else {
       CurrentTime++;
       for (int i = BNCInputPos; i < nInputs; i++) {
-          if (inputEnabled[i] && !inputOverrideState[i]) {
-            inputState[i] = digitalReadDirect(InputCh[i]); 
-          } 
+        if (inputEnabled[i] && !inputOverrideState[i]) {
+          inputState[i] = digitalReadDirect(InputCh[i]); 
+        } 
       }
+      #if MACHINE_TYPE == 4 
+        FlexIO.readDI();
+        for (int i = 0; i < nFlexIO; i++) {
+          if (flexIOChannelType[i] == 0) {
+            if (inputEnabled[i+FlexInputPos] && !inputOverrideState[i+FlexInputPos]) {
+              inputState[i+FlexInputPos] = FlexIO.getDI(i);
+            }
+          }
+        }
+      #endif
       // Determine if a handled condition occurred
       Ev = ConditionPos;
       for (int i = 0; i < nConditionsUsed; i++) {
@@ -1012,8 +1113,8 @@ void handler() { // This is the timer handler function, which is called every (t
         Ev++;
       }
       // Determine if a digital low->high or high->low transition event occurred
-      Ev = DigitalInputPos;
-      for (int i = BNCInputPos; i < nInputs; i++) {
+      Ev = maxSerialEvents;
+      for (int i = DigitalInputPos; i < nInputs; i++) {
           if (inputEnabled[i] == 1) {
               if ((inputState[i] == logicHigh[i]) && (lastInputState[i] == logicLow[i])) {
                 lastInputState[i] = logicHigh[i]; CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
@@ -1029,7 +1130,7 @@ void handler() { // This is the timer handler function, which is called every (t
       }
       // Determine if a USB or hardware serial event occurred
       Ev = 0; Byte1 = 0;
-      for (int i = 0; i < BNCInputPos; i++) {
+      for (int i = 0; i < DigitalInputPos; i++) {
         switch(InputHW[i]) {
           case 'U':
           if (usesUARTInputs) {
@@ -1053,7 +1154,7 @@ void handler() { // This is the timer handler function, which is called every (t
                 Byte1++;
               break;
               case 2:
-                #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+                #if MACHINE_TYPE > 1
                   if (Module3.available() > 0) {
                     Byte2 = Module3.readByte();
                     if (Byte2 <= nModuleEvents[2]) {
@@ -1414,11 +1515,15 @@ void updateStatusLED(int Mode) {
                 LEDBrightnessAdjustDirection = 1;
               }
               analogWrite(BlueLEDPin, LEDBrightness);
+              #if MACHINE_TYPE == 4
+                analogWrite(RedLEDPin, LEDBrightness/2.5);
+              #endif
             }
           }
         } break;
       case 2: { // Connected, waiting for state machine description (Green)
           analogWrite(BlueLEDPin, 0);
+          analogWrite(RedLEDPin, 0);
           digitalWriteDirect(GreenLEDPin, 1);
         } break;
       case 3: { // Running state machine (Orange)
@@ -1487,7 +1592,7 @@ void setStateOutputs(byte State) {
             case 1:
               Module2.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
-            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+            #if MACHINE_TYPE > 1
               case 2:
                 Module3.writeByteArray(serialByteBuffer, nMessageBytes);
               break;
@@ -1534,8 +1639,38 @@ void setStateOutputs(byte State) {
              pwmWrite(OutputCh[i], OutputStateMatrix[State][i]);
           }
         break;
+        #if MACHINE_TYPE == 4
+          case 'F':
+            switch (flexIOChannelType[i-FlexOutputPos]) {
+              case 1: // Digital output
+                FlexIO.setDO(i-FlexOutputPos, OutputStateMatrix[State][i]);
+                flexIO_updateDOflag = true;
+              break;
+              case 3: // Analog output
+                // Set values
+                flexIOValues[i-FlexOutputPos] = (uint16_t)OutputStateMatrix[State][i];
+                flexIO_updateAOflag = true;
+              break;
+            }
+          break;
+        #endif
      }
   }
+  // Update FlexIO outputs
+  #if MACHINE_TYPE == 4
+    if (flexIO_updateDOflag) {
+      flexIO_updateDOflag = false;
+      FlexIO.writeDO();
+    }
+    if (flexIO_updateAOflag) {
+      for (int i = 0; i < nFlexIO; i++) {
+        if (flexIOChannelType[i] == 3) {
+          FlexIO.writeDAC(i, flexIOValues[i]);
+        }
+      }
+      flexIO_updateAOflag = false;
+    }
+  #endif
   // Update valves
   if (reqValveUpdate) {
     valveWrite();
@@ -1600,6 +1735,19 @@ void resetOutputs() {
       break;
     }
   }
+  #if MACHINE_TYPE == 4
+    for (int i = 0; i < nFlexIO; i++) {
+      switch(flexIOChannelType[i]) {
+        case 1:
+          FlexIO.setDO(i,0);
+        break;
+        case 3:
+          FlexIO.writeDAC(i, 0);
+        break;
+      }
+    }
+    FlexIO.writeDO();
+  #endif
   valveWrite();
   for (int i = 0; i < MAX_GLOBAL_TIMERS; i++) {
     GlobalTimersTriggered[i] = false;
@@ -1700,7 +1848,7 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
           case 1:
             Module2.writeByteArray(serialByteBuffer, nMessageBytes);
           break;
-          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          #if MACHINE_TYPE > 1
             case 2:
               Module3.writeByteArray(serialByteBuffer, nMessageBytes);
             break;
@@ -1835,7 +1983,7 @@ void relayModuleBytes() {
               }
             }
           break;
-          #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+          #if MACHINE_TYPE > 1
             case 2:
               Byte3 = Module3.available();
               if (Byte3>0) { 
@@ -1886,7 +2034,7 @@ void clearSerialBuffers() {
                   Module2.readByte(); Byte1++;
                 }
               break;
-              #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+              #if MACHINE_TYPE > 1
                 case 2:
                   while (Module3.available() > 0) {
                     Module3.readByte(); Byte1++;
@@ -2284,6 +2432,13 @@ void startSM() {
     }
     inputOverrideState[i] = false;
   }
+  #if MACHINE_TYPE == 4
+    for (int i = FlexInputPos; i < FlexInputPos+nFlexIO; i++) { // Todo: Mod to read any digital inputs
+      inputState[i] = logicLow[i];
+      lastInputState[i] = logicLow[i];
+    }
+  #endif
+  
   for (int i = nInputs; i < nInputs+MAX_GLOBAL_TIMERS; i++) { // Clear global timer virtual lines
     inputState[i] = 0;
   }
