@@ -177,6 +177,8 @@ void AD5592R::writeRegister() {
   SPI.transfer16(registerBuffer.uint16[0]);
   digitalWriteFast(CSPin, HIGH);
   SPI.endTransaction();
+  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
+  SPI.endTransaction();
 }
 
 uint16_t AD5592R::readRegister() {
@@ -184,5 +186,7 @@ uint16_t AD5592R::readRegister() {
   digitalWriteFast(CSPin, LOW);
   registerBuffer.uint16[0] = SPI.transfer16(registerBuffer.uint16[0]);
   digitalWriteFast(CSPin, HIGH);
+  SPI.endTransaction();
+  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
   SPI.endTransaction();
 }

@@ -2,7 +2,7 @@
   ----------------------------------------------------------------------------
 
   This file is part of the Sanworks Bpod_Gen2 repository
-  Copyright (C) 2018 Sanworks LLC, Stony Brook, New York, USA
+  Copyright (C) 2021 Sanworks LLC, Rochester, New York, USA
 
   ----------------------------------------------------------------------------
 
@@ -28,10 +28,8 @@
 // change the PWM_FREQUENCY and TC_FREQUENCY constants to 50000 in the file /Arduino/hardware/arduino/sam/variants/arduino_due_x/variant.h
 // or in Windows, \Users\Username\AppData\Local\Arduino15\packages\arduino\hardware\sam\1.6.7\variants\arduino_due_x\variant.h
 //
-// IF COMPILING FOR TEENSY 3.6, Requires modifications to Teensy core files:
-// In the folder /arduino-1.8.X/hardware/teensy/avr/cores/teensy3, modify the following line in each of the 5 files listed below:
-// #define SERIAL1_RX_BUFFER_SIZE 64  --> #define SERIAL1_RX_BUFFER_SIZE 256
-// IN FILES: serial1.c, serial2.c, serial3.c, serial4.c, serial5.c
+// **NOTE** previous versions of this firmware required dependencies and modifications to the Teensy core files. As of firmware v4, these are no longer necessary.
+// **NOTE** Requires Arduino 1.8.13 or newer, and Teensyduino 1.5.4
 
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
@@ -124,9 +122,9 @@
   #if ETHERNET_COM == 0 
     ArCOM PC(SerialUSB); 
   #else
-    ArCOMvE PC(Serial5); // Creates an ArCOM object called PC, wrapping Serial (for Teensy 3.6)
+    ArCOMvE PC(Serial5); 
   #endif
-  ArCOM Module1(Serial1); // Creates an ArCOM object called Module1, wrapping Serial1
+  ArCOM Module1(Serial1);
   ArCOM Module2(Serial3); 
   ArCOM Module3(Serial2); 
   ArCOM Module4(Serial4); 
@@ -144,10 +142,12 @@
 // State machine hardware description  /
 ////////////////////////////////////////
 // Two pairs of arrays describe the hardware as it appears to the state machine: inputHW / inputCh, and outputHW / outputCh.
-// In these arrays, the first row codes for hardware type. U = UART, X = USB, S = SPI,  D = digital, B = BNC (digital/inverted), W = Wire (digital/inverted), V = Valve (digital), F = Flex I/O (AD5592r)
-// P = port (digital channel if input, PWM channel if output). Channels must be listed IN THIS ORDER (this constraint allows efficient code at runtime). 
+// In these arrays, the first row codes for hardware type. U = UART, X = USB, F = Flex I/O (AD5592r) S = SPI,  D = digital, 
+//                                                         B = BNC (digital/inverted) W = Wire (digital/inverted), V = Valve (digital)
+//                                                         P = port (digital channel if input, PWM channel if output). 
+// Channels must be listed IN THIS ORDER (this constraint allows efficient code at runtime). 
 // The digital,BNC or wire channel currently replaced by 'Y' is the sync channel (none by default).
-// The second row lists the physical input and output channels on Arduino for B,W,P, and the SPI CS pin is listed for S. Use 0 for UART and USB.
+// The second row lists the physical input and output channels on Arduino for B,W,P, and the SPI CS pin is listed for S. Use 0 for UART, USB and Flex I/O.
 
 #if MACHINE_TYPE == 1 // Bpod state machine v0.5
     byte InputHW[] = {'U','U','X','B','B','W','W','W','W','P','P','P','P','P','P','P','P'};
@@ -185,7 +185,7 @@ const byte nOutputs = sizeof(OutputHW);
   const byte nSerialChannels = 3; // Must match total of 'U' and 'X' in InputHW (above)
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
-  const int SerialBaudRate = 115200;
+  const int SerialBaudRate = 115200; // Transfer speed of hardware serial (Module) ports
 #elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
   const byte nSerialChannels = 4; 
   const byte maxSerialEvents = 60;
@@ -235,6 +235,17 @@ byte nConditionsUsed = MAX_CONDITIONS;
   boolean flexIO_updateAOflag = false;
 #else
   const byte nFlexIO = 0;
+#endif
+
+// Serial buffers
+byte HWSerialBuf1[192] = {0};
+byte HWSerialBuf2[192] = {0};
+#if MACHINE_TYPE > 1
+  byte HWSerialBuf3[192] = {0};
+#endif
+#if MACHINE_TYPE == 3
+  byte HWSerialBuf4[192] = {0};
+  byte HWSerialBuf5[192] = {0};
 #endif
                          
 // Other hardware pin mapping
@@ -594,26 +605,32 @@ void setup() {
           switch(Byte1) {
             case 0:
               Serial1.begin(SerialBaudRate); Byte1++;
+              Serial1.addMemoryForRead(HWSerialBuf1, 192);
             break;
             case 1:
               Serial2.begin(SerialBaudRate); Byte1++;
+              Serial2.addMemoryForRead(HWSerialBuf2, 192);
             break;
             #if MACHINE_TYPE == 2 || Machine_TYPE == 3
                 case 2:
                   Serial3.begin(SerialBaudRate); Byte1++;
+                  Serial3.addMemoryForRead(HWSerialBuf3, 192);
                 break;
             #elif MACHINE_TYPE == 4
                 case 2:
                   Serial6.begin(SerialBaudRate); Byte1++;
+                  Serial6.addMemoryForRead(HWSerialBuf3, 192);
                 break;
             #endif  
             #if MACHINE_TYPE == 3
               case 3:
                 Serial4.begin(SerialBaudRate); Byte1++;
+                Serial4.addMemoryForRead(HWSerialBuf4, 192);
               break;
               #if ETHERNET_COM == 0
                 case 4:
                   Serial5.begin(SerialBaudRate); Byte1++;
+                  Serial5.addMemoryForRead(HWSerialBuf5, 192);
                 break;
               #endif
             #endif
