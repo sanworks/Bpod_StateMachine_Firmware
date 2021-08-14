@@ -29,7 +29,7 @@
 // or in Windows, \Users\Username\AppData\Local\Arduino15\packages\arduino\hardware\sam\1.6.7\variants\arduino_due_x\variant.h
 //
 // **NOTE** previous versions of this firmware required dependencies and modifications to the Teensy core files. As of firmware v4, these are no longer necessary.
-// **NOTE** Requires Arduino 1.8.13 or newer, and Teensyduino 1.5.4
+// **NOTE** Requires Arduino 1.8.15 or newer, and Teensyduino 1.5.4
 
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
@@ -148,6 +148,7 @@
 // Channels must be listed IN THIS ORDER (this constraint allows efficient code at runtime). 
 // The digital,BNC or wire channel currently replaced by 'Y' is the sync channel (none by default).
 // The second row lists the physical input and output channels on Arduino for B,W,P, and the SPI CS pin is listed for S. Use 0 for UART, USB and Flex I/O.
+// For Flex I/O channels, the second row lists their index among Flex I/O channels (e.g. 0, 1, 2, 3)
 
 #if MACHINE_TYPE == 1 // Bpod state machine v0.5
     byte InputHW[] = {'U','U','X','B','B','W','W','W','W','P','P','P','P','P','P','P','P'};
@@ -175,7 +176,7 @@
     byte InputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P'};
     byte InputCh[] = {0,0,0,0,0,0,0,0,6,5,39,38,17,16,41};                                         
     byte OutputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P','V','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,0,0,0,4,3,36,37,15,14,18,20,19,21,22,23};  
+    byte OutputCh[] = {0,0,0,0,0,1,2,3,4,3,36,37,15,14,18,20,19,21,22,23};  
 #endif
 
 // State machine meta information
@@ -367,7 +368,11 @@ const byte InputMatrixSize = maxSerialEvents + (nDigitalInputs*2);
 byte InputStateMatrix[MaxStates+1][InputMatrixSize] = {0}; // Matrix containing all of Bpod's digital inputs and corresponding state transitions
 byte StateTimerMatrix[MaxStates+1] = {0}; // Matrix containing states to move to if the state timer elapses
 const byte OutputMatrixSize = nOutputs;
-byte OutputStateMatrix[MaxStates+1][OutputMatrixSize] = {0}; // Hardware states for outputs. Serial channels > Digital outputs > Virtual (global timer trigger, global timer cancel, global counter reset)
+#if MACHINE_TYPE == 4
+  uint16_t OutputStateMatrix[MaxStates+1][OutputMatrixSize] = {0}; // Hardware states for outputs. Serial channels > Digital outputs > Virtual (global timer trigger, global timer cancel, global counter reset)
+#else
+  byte OutputStateMatrix[MaxStates+1][OutputMatrixSize] = {0};
+#endif
 byte smGlobalCounterReset[MaxStates+1] = {0}; // For each state, global counter to reset.
 byte GlobalTimerStartMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer onset events
 byte GlobalTimerEndMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer elapse events
@@ -403,8 +408,13 @@ byte ConditionPos = GlobalCounterPos + MAX_GLOBAL_COUNTERS; // First condition e
 byte TupPos = ConditionPos+MAX_CONDITIONS; // First Jump event code
 
 byte GlobalTimerChannel[MAX_GLOBAL_TIMERS] = {254}; // Channel code for global timer onset/offset.
-byte GlobalTimerOnMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer is active (if channel is serial).
-byte GlobalTimerOffMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer elapses (if channel is serial).
+#if MACHINE_TYPE == 4
+  uint16_t GlobalTimerOnMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer is active (if channel is serial).
+  uint16_t GlobalTimerOffMessage[MAX_GLOBAL_TIMERS] = {254}; // Message to send when global timer elapses (if channel is serial).
+#else
+  byte GlobalTimerOnMessage[MAX_GLOBAL_TIMERS] = {254}; 
+  byte GlobalTimerOffMessage[MAX_GLOBAL_TIMERS] = {254}; 
+#endif
 unsigned long GlobalTimerStart[MAX_GLOBAL_TIMERS] = {0}; // Future Times when active global timers will start measuring time
 unsigned long GlobalTimerEnd[MAX_GLOBAL_TIMERS] = {0}; // Future Times when active global timers will elapse
 unsigned long GlobalTimers[MAX_GLOBAL_TIMERS] = {0}; // Timers independent of states
@@ -451,7 +461,7 @@ int Ev = 0; // Index of current event
 byte overrideChan = 0; // Output channel being manually overridden
 uint16_t overrideChanState = 0; // State of channel being manually overridden (16-bit to hold PWM value = 256 on Teensy if necessary)
 byte nOverrides = 0; // Number of overrides on a line of the state matrix (for compressed transmission scheme)
-byte col = 0; byte val = 0; // col and val are used in state matrix compression scheme
+uint16_t col = 0; uint16_t val = 0; // col and val are used in state matrix compression scheme
 const uint16_t StateMatrixBufferSize = 50000;
 #if MACHINE_TYPE > 1
   byte StateMatrixBuffer[StateMatrixBufferSize] = {0}; // Stores next trial's state matrix
@@ -568,10 +578,7 @@ void setup() {
   
   SPI.begin();
   #if MACHINE_TYPE == 4
-    for (int i = 0; i<nFlexIO; i++) {
-      FlexIO.setChannelType(i, flexIOChannelType[i]);
-    }
-    FlexIO.updateChannelTypes();
+    setFlexIOChannelTypes();
   #endif
   
   // Configure input channels
@@ -892,13 +899,10 @@ void handler() { // This is the timer handler function, which is called every (t
       case 'Q': // Set FlexIO channel configuration
         #if MACHINE_TYPE == 4
           PC.readByteArray(flexIOChannelType, nFlexIO);
-          for (int i = 0; i<nFlexIO; i++) {
-            FlexIO.setChannelType(i, flexIOChannelType[i]);
-          }
-          FlexIO.updateChannelTypes();
+          setFlexIOChannelTypes();
           PC.writeByte(1);
         #endif
-      break;
+      break;   
       case 'q': // Return current FlexIO channel configuration
         #if MACHINE_TYPE == 4
           PC.writeByteArray(flexIOChannelType,nFlexIO);
@@ -1102,6 +1106,7 @@ void handler() { // This is the timer handler function, which is called every (t
       PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
       SyncWrite();
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
+      updateFlexOutputs();
     } else {
       CurrentTime++;
       for (int i = BNCInputPos; i < nInputs; i++) {
@@ -1383,6 +1388,7 @@ void handler() { // This is the timer handler function, which is called every (t
           setStateOutputs(CurrentState);
         }
       }
+      updateFlexOutputs(); // If setStateOutputs or global timer linked channels set FlexOutput update flags, the latest values are written
     } // End code to run after first loop
   }  else { // If not running state matrix
     
@@ -1658,14 +1664,14 @@ void setStateOutputs(byte State) {
         break;
         #if MACHINE_TYPE == 4
           case 'F':
-            switch (flexIOChannelType[i-FlexOutputPos]) {
+            switch (flexIOChannelType[OutputCh[i]]) {
               case 1: // Digital output
-                FlexIO.setDO(i-FlexOutputPos, OutputStateMatrix[State][i]);
+                FlexIO.setDO(OutputCh[i], OutputStateMatrix[State][i]);
                 flexIO_updateDOflag = true;
               break;
               case 3: // Analog output
                 // Set values
-                flexIOValues[i-FlexOutputPos] = (uint16_t)OutputStateMatrix[State][i];
+                flexIOValues[OutputCh[i]] = OutputStateMatrix[State][i];
                 flexIO_updateAOflag = true;
               break;
             }
@@ -1673,21 +1679,7 @@ void setStateOutputs(byte State) {
         #endif
      }
   }
-  // Update FlexIO outputs
-  #if MACHINE_TYPE == 4
-    if (flexIO_updateDOflag) {
-      flexIO_updateDOflag = false;
-      FlexIO.writeDO();
-    }
-    if (flexIO_updateAOflag) {
-      for (int i = 0; i < nFlexIO; i++) {
-        if (flexIOChannelType[i] == 3) {
-          FlexIO.writeDAC(i, flexIOValues[i]);
-        }
-      }
-      flexIO_updateAOflag = false;
-    }
-  #endif
+
   // Update valves
   if (reqValveUpdate) {
     valveWrite();
@@ -1812,6 +1804,23 @@ void valveWrite() {
   digitalWriteDirect(valveCSChannel, LOW);
 }
 
+void updateFlexOutputs() {
+  #if MACHINE_TYPE == 4
+    if (flexIO_updateDOflag) {
+      flexIO_updateDOflag = false;
+      FlexIO.writeDO();
+    }
+    if (flexIO_updateAOflag) {
+      for (int i = 0; i < nFlexIO; i++) {
+        if (flexIOChannelType[i] == 3) {
+          FlexIO.writeDAC(i, flexIOValues[i]);
+        }
+      }
+      flexIO_updateAOflag = false;
+    }
+  #endif
+}
+
 void digitalWriteDirect(int pin, boolean val) { // >10x Faster than digitalWrite(), specific to Arduino Due
   #if MACHINE_TYPE < 3
     if (val) g_APinDescription[pin].pPort -> PIO_SODR = g_APinDescription[pin].ulPin;
@@ -1916,10 +1925,34 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
         outputOverrideState[thisChannel] = 0;
       }
     break;
+    #if MACHINE_TYPE == 4
+      case 'F': // Flex I/O
+        switch (flexIOChannelType[OutputCh[thisChannel]]) {
+            case 1: // Digital output
+              if (op == 0) {
+                FlexIO.setDO(OutputCh[thisChannel], 0);
+              } else if (op == 1) {
+                FlexIO.setDO(OutputCh[thisChannel], 1);
+              }
+              flexIO_updateDOflag = true;
+            break;
+            case 3: // Analog output
+              // Set values
+              if (op == 0) {
+                flexIOValues[OutputCh[thisChannel]] = GlobalTimerOffMessage[timerChan];
+              } else if (op == 1) {
+                flexIOValues[OutputCh[thisChannel]] = GlobalTimerOnMessage[timerChan];
+              }
+              flexIO_updateAOflag = true;
+            break;
+          }
+          outputOverrideState[thisChannel] = op;
+      break;
+    #endif
   }
   inputState[nInputs+timerChan] = op;
 }
-
+            
 void relayModuleInfo(ArCOM serialCOM, byte moduleID) {
   boolean moduleFound = false;
   boolean setBaudRate = false;
@@ -2129,9 +2162,24 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     }
     for (int x = 0; x < nStates; x++) { // Get Output Matrix differences
       nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
+      #if MACHINE_TYPE == 4 // Output matrix is 16-bit for state machine 2+
+        typeBuffer.byteArray[0] = (uint8_t)nOverrides;
+        typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        nOverrides = (uint8_t)typeBuffer.uint16;
+      #endif
       for (int y = 0; y<nOverrides; y++) {
         col = StateMatrixBuffer[bufferPos]; bufferPos++;
+        #if MACHINE_TYPE == 4 // Output matrix is 16-bit for state machine 2+
+          typeBuffer.byteArray[0] = (uint8_t)col;
+          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
+          col = typeBuffer.uint16;
+        #endif  
         val = StateMatrixBuffer[bufferPos]; bufferPos++;
+        #if MACHINE_TYPE == 4 // Output matrix is 16-bit for state machine 2+
+          typeBuffer.byteArray[0] = (uint8_t)val;
+          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
+          val = typeBuffer.uint16;
+        #endif
         OutputStateMatrix[x][col] = val;
       }
     }
@@ -2178,12 +2226,25 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     for (int i = 0; i < nGlobalTimersUsed; i++) {
       GlobalTimerChannel[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
     }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      GlobalTimerOnMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      GlobalTimerOffMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
+    #if MACHINE_TYPE == 4 // Global timer on/off messages are 16-bit for state machine 2+
+      for (int i = 0; i < nGlobalTimersUsed; i++) {
+        typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        GlobalTimerOnMessage[i] = typeBuffer.uint16;
+      }
+      for (int i = 0; i < nGlobalTimersUsed; i++) {
+        typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        GlobalTimerOffMessage[i] = typeBuffer.uint16;
+      }
+    #else
+      for (int i = 0; i < nGlobalTimersUsed; i++) {
+        GlobalTimerOnMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+      }
+      for (int i = 0; i < nGlobalTimersUsed; i++) {
+        GlobalTimerOffMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+      }
+    #endif    
     for (int i = 0; i < nGlobalTimersUsed; i++) {
       GlobalTimerLoop[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
       if (GlobalTimerLoop[i] > 1) {
@@ -2400,6 +2461,16 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     smaTransmissionConfirmed = true;
   #endif
 }
+
+void setFlexIOChannelTypes() {
+  #if MACHINE_TYPE == 4
+    for (int i = 0; i<nFlexIO; i++) {
+      FlexIO.setChannelType(i, flexIOChannelType[i]);
+    }
+    FlexIO.updateChannelTypes();
+  #endif
+}
+
 void startSM() {  
   if (newSMATransmissionStarted){
       if (smaTransmissionConfirmed) {
