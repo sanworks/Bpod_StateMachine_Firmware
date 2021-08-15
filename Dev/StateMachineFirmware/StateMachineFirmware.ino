@@ -19,7 +19,7 @@
 
 */
 // #######################################
-// # Bpod State Machine Firmware Ver. 22 #
+// # Bpod State Machine Firmware Ver. 23 #
 // #######################################
 //
 // SYSTEM SETUP:
@@ -74,7 +74,7 @@
 //////////////////////////////////////////
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FIRMWARE_VERSION 22
+#define FIRMWARE_VERSION 23
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -2353,6 +2353,31 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
       typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
       GlobalCounterThresholds[i] = typeBuffer.uint32;
     }
+    byte containsAdditionalOps = StateMatrixBuffer[bufferPos]; bufferPos++; // New for firmware r23 - certain additional ops can be packaged with the state machine description
+    boolean clearedSerialMessageLibrary = false;
+    while (containsAdditionalOps) {
+      byte thisOp = StateMatrixBuffer[bufferPos]; bufferPos++;
+      switch (thisOp) {
+        case 'L': // Load serial message library for one module
+          if (!clearedSerialMessageLibrary) {
+            resetSerialMessages();
+            clearedSerialMessageLibrary = true;
+          }
+          Byte1 = StateMatrixBuffer[bufferPos]; bufferPos++;
+          Byte2 = StateMatrixBuffer[bufferPos]; bufferPos++;
+          for (int i = 0; i < Byte2; i++) {
+            Byte3 = StateMatrixBuffer[bufferPos]; bufferPos++; // Message Index
+            Byte4 = StateMatrixBuffer[bufferPos]; bufferPos++; // Message Length
+            SerialMessage_nBytes[Byte3][Byte1] = Byte4;
+            for (int j = 0; j < Byte4; j++) {
+              SerialMessageMatrix[Byte3][Byte1][j] = StateMatrixBuffer[bufferPos]; bufferPos++;
+            }
+          }
+        break;
+      }
+      containsAdditionalOps = StateMatrixBuffer[bufferPos]; bufferPos++;
+    }
+    
   #else // Bpod 0.5; Read state matrix from serial port
     for (int x = 0; x < nStates; x++) { // Get State timer matrix
       StateTimerMatrix[x] = PC.readByte();
