@@ -29,6 +29,10 @@ class AD5592R{
     void writeDAC(byte channel, uint16_t value); // Convert to setDAC() for LDAC operation
     void setChannelType(byte channel, byte type);
     void updateChannelTypes();
+    byte nDAC = 0; // Number of DAC channels configured
+    byte nADC = 0; // Number of ADC channels configured
+    byte nDO = 0; // Number of digital outputs configured
+    byte nDI = 0; // Number of digital inputs configured
     byte DOstate = 0; // Bits indicate logic levels written to channels configured as DO
     byte DIstate = 0; // Bits indicate logic levels read from channels configured as DI
     void setDO(byte channel, byte value); // Sets logic of an output channel in DOstate. Must be written to the chip with a call to writeDO()

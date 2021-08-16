@@ -234,6 +234,8 @@ byte nConditionsUsed = MAX_CONDITIONS;
   boolean flexIO_updateDOflag = false;
   boolean flexIO_updateAIflag = false;
   boolean flexIO_updateAOflag = false;
+  uint32_t flexIO_ADC_Sample_Interval = 1000; // Units = state machine cycles
+  uint32_t flexIO_ADC_Sample_Clock = 0; // Counts cycles
 #else
   const byte nFlexIO = 0;
 #endif
@@ -492,6 +494,13 @@ union {
     uint64_t uint64[2];
 } timeBuffer; // For time transmission on trial end
 
+#if MACHINE_TYPE == 4 
+union {
+    byte byteArray[8];
+    uint16_t uint16[4];
+} adcBuffer; // For transmitting ADC data
+#endif
+
 #if MACHINE_TYPE > 2
   IntervalTimer hardwareTimer;
 #endif
@@ -689,6 +698,9 @@ void setup() {
      digitalWrite(SyncRegisterLatch, LOW);
   }
   CurrentEventBuffer[0] = 1;
+  #if MACHINE_TYPE == 4
+    adcBuffer.byteArray[0] = 3; // The first byte is op 3, read ADC data
+  #endif
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
   #if MACHINE_TYPE < 3
     Timer3.attachInterrupt(handler); // Timer3 is Arduino Due's hardware timer, which will trigger the function "handler" precisely every (timerPeriod) us
@@ -900,6 +912,7 @@ void handler() { // This is the timer handler function, which is called every (t
         #if MACHINE_TYPE == 4
           PC.readByteArray(flexIOChannelType, nFlexIO);
           setFlexIOChannelTypes();
+          adcBuffer.byteArray[1] = FlexIO.nADC;
           PC.writeByte(1);
         #endif
       break;   
@@ -1106,7 +1119,10 @@ void handler() { // This is the timer handler function, which is called every (t
       PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
       SyncWrite();
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
-      updateFlexOutputs();
+      #if MACHINE_TYPE == 4
+        flexIO_ADC_Sample_Clock = 0;
+        updateFlexOutputs();
+      #endif
     } else {
       CurrentTime++;
       for (int i = BNCInputPos; i < nInputs; i++) {
@@ -1115,6 +1131,14 @@ void handler() { // This is the timer handler function, which is called every (t
         } 
       }
       #if MACHINE_TYPE == 4 
+        if (FlexIO.nADC > 0) {
+          flexIO_ADC_Sample_Clock++;
+          if (flexIO_ADC_Sample_Clock == flexIO_ADC_Sample_Interval) {
+            flexIO_ADC_Sample_Clock = 0;          
+            FlexIO.readADC();
+            flexIO_updateAIflag = true;
+          }
+        }
         FlexIO.readDI();
         for (int i = 0; i < nFlexIO; i++) {
           if (flexIOChannelType[i] == 0) {
@@ -1389,6 +1413,20 @@ void handler() { // This is the timer handler function, which is called every (t
         }
       }
       updateFlexOutputs(); // If setStateOutputs or global timer linked channels set FlexOutput update flags, the latest values are written
+      // Send analog values captured from FlexI/O channels
+      byte adcBufferPos = 1;
+      #if MACHINE_TYPE == 4 // Send back analog data
+        if (flexIO_updateAIflag) {
+          flexIO_updateAIflag = false;
+          for (int i = 0; i < nFlexIO; i++) {
+            if (flexIOChannelType[i] == 2) {
+              adcBuffer.uint16[adcBufferPos] = FlexIO.adcReadout[i];
+              adcBufferPos++;
+            }
+          }
+          PC.writeByteArray(adcBuffer.byteArray, adcBufferPos*2);  
+        }     
+      #endif
     } // End code to run after first loop
   }  else { // If not running state matrix
     

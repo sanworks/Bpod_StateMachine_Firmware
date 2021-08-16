@@ -167,8 +167,23 @@ void AD5592R::updateChannelTypes() {
   registerBuffer.uint8[1] = B00101000;
   registerBuffer.uint8[0] = isDAC;
   writeRegister();
+  nDAC = 0; nADC = 0; nDO = 0; nDI = 0;
+  
+  for (int i = 0; i < 8; i++) { // Update channel counts
+    if (bitRead(isADC,i)) {
+      nADC++;
+    }
+    if (bitRead(isDAC,i)) {
+      nDAC++;
+    }
+    if (bitRead(isDO,i)) {
+      nDO++;
+    }
+    if (bitRead(isDI,i)) {
+      nDI++;
+    }
+  }
 }
-
 
 void AD5592R::writeRegister() {
   // SPI settings can be used to speed up DAC and DO writes
