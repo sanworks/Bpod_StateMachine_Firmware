@@ -921,6 +921,13 @@ void handler() { // This is the timer handler function, which is called every (t
           PC.writeByteArray(flexIOChannelType,nFlexIO);
         #endif
       break;
+      case '^': // Set FlexIO analog input sampling rate
+        #if MACHINE_TYPE == 4
+          flexIO_ADC_Sample_Interval = PC.readUint32();
+          flexIO_ADC_Sample_Clock = 0;
+          PC.writeByte(1);
+        #endif
+      break;
       case 'O':  // Override digital hardware state
         overrideChan = PC.readByte();
         overrideChanState = PC.readByte();
