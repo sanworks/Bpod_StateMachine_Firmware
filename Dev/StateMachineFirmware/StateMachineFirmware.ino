@@ -119,8 +119,13 @@
   ArCOM Module2(Serial2);
   ArCOM Module3(Serial3);
 #elif MACHINE_TYPE == 3
+  #if !defined(CDC2_STATUS_INTERFACE)
+  #error Error! You must choose 'Double Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
+  #endif
   #if ETHERNET_COM == 0 
-    ArCOM PC(SerialUSB); 
+    ArCOM PC(SerialUSB);
+    ArCOM PC1(SerialUSB1); 
+    ArCOM PC2(SerialUSB2); 
   #else
     ArCOMvE PC(Serial5); 
   #endif
@@ -132,7 +137,12 @@
     ArCOM Module5(Serial5); 
   #endif
 #elif MACHINE_TYPE == 4
-  ArCOM PC(SerialUSB); 
+  #if !defined(CDC3_STATUS_INTERFACE)
+  #error Error! You must choose 'Triple Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
+  #endif
+  ArCOM PC(SerialUSB);
+  ArCOM PC1(SerialUSB1); 
+  ArCOM PC2(SerialUSB2);  
   ArCOM Module1(Serial1); 
   ArCOM Module2(Serial2);
   ArCOM Module3(Serial6);
@@ -142,7 +152,7 @@
 // State machine hardware description  /
 ////////////////////////////////////////
 // Two pairs of arrays describe the hardware as it appears to the state machine: inputHW / inputCh, and outputHW / outputCh.
-// In these arrays, the first row codes for hardware type. U = UART, X = USB, F = Flex I/O (AD5592r) S = SPI,  D = digital, 
+// In these arrays, the first row codes for hardware type. U = UART, X = USB1, F = Flex I/O (AD5592r) S = SPI,  D = digital, 
 //                                                         B = BNC (digital/inverted) W = Wire (digital/inverted), V = Valve (digital)
 //                                                         P = port (digital channel if input, PWM channel if output). 
 // Channels must be listed IN THIS ORDER (this constraint allows efficient code at runtime). 
@@ -183,7 +193,7 @@
 const byte nInputs = sizeof(InputHW);
 const byte nOutputs = sizeof(OutputHW);
 #if MACHINE_TYPE == 1 // State machine (Bpod 0.5)
-  const byte nSerialChannels = 3; // Must match total of 'U' and 'X' in InputHW (above)
+  const byte nSerialChannels = 3; // Must match total of 'U', 'X' and 'Z' in InputHW (above)
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
   const int SerialBaudRate = 115200; // Transfer speed of hardware serial (Module) ports
@@ -194,8 +204,8 @@ const byte nOutputs = sizeof(OutputHW);
   const int SerialBaudRate = 1312500;
 #elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0-2.3)
   #if ETHERNET_COM == 0
-    const byte nSerialChannels = 6; 
-    const byte maxSerialEvents = 90;
+    const byte nSerialChannels = 7; 
+    const byte maxSerialEvents = 105;
   #else
     const byte nSerialChannels = 5; 
     const byte maxSerialEvents = 75;
@@ -228,13 +238,13 @@ byte nConditionsUsed = MAX_CONDITIONS;
 #if MACHINE_TYPE == 4
   const byte nFlexIO = 4;
   AD5592R FlexIO(9); // Create FlexIO, an AD5592R object with CS on Teensy pin 9
-  byte flexIOChannelType[nFlexIO] = {0,0,1,1}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC
+  volatile byte flexIOChannelType[nFlexIO] = {1,1,1,1}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC
   uint16_t flexIOValues[nFlexIO] = {0}; // Stores values read from or to be written to FlexIO channels
   boolean flexIO_updateDIflag = false; // Flags if updates are required for each channel type
   boolean flexIO_updateDOflag = false;
   boolean flexIO_updateAIflag = false;
   boolean flexIO_updateAOflag = false;
-  uint32_t flexIO_ADC_Sample_Interval = 1000; // Units = state machine cycles
+  uint32_t flexIO_ADC_Sample_Interval = 10; // Units = state machine cycles
   uint32_t flexIO_ADC_Sample_Clock = 0; // Counts cycles
 #else
   const byte nFlexIO = 0;
@@ -308,6 +318,7 @@ byte DigitalInputPos = 0; // Beginning of digital input channels
 
 const unsigned long ModuleIDTimeout = 100; // timeout for modules to respond to byte 255 (units = 100us cycles). Byte 255 polls for module hardware information
 boolean statusLEDEnabled = true; // Set to false to disable status LED
+uint16_t trialCounter = 0; // Current trial number (reset with serial op code)
 
 // Initialize system state vars: 
 byte outputState[nOutputs] = {0}; // State of outputs
@@ -325,11 +336,16 @@ int CurrentState = 1; // What state is the state machine currently in? (State 0 
 int NewState = 1; // State the system determined it needs to enter next. If different from current state, transition logic proceeds.
 int CurrentStateTEMP = 1; // Temporarily holds current state during transition
 // Event vars
-const byte maxCurrentEvents = 10; // Max number of events that can be recorded during a single 100 microsecond cycle
+#if MACHINE_TYPE < 3
+  const byte maxCurrentEvents = 10; // Max number of events that can be recorded during a single 100 microsecond cycle
+#else
+  const byte maxCurrentEvents = 100; // Max number of events that can be recorded during a single 100 microsecond cycle
+#endif
 byte CurrentEvent[maxCurrentEvents] = {0}; // What event code just happened and needs to be handled. Up to 10 can be acquired per 100us loop.
 byte CurrentEventBuffer[maxCurrentEvents+6] = {0}; // Current events as packaged for rapid vector transmission 
 byte nCurrentEvents = 0; // Index of current event
-byte SoftEvent = 0; // What soft event code just happened
+byte SoftEvent1 = 0; // What soft event code was just received on USB
+byte SoftEvent2 = 0; // What soft event code was just received on USB2
 // Trial / Event Sync Vars
 byte SyncChannel = 255; // 255 if no sync codes, <255 to specify a channel to use for sync
 boolean syncOn = false; // If true, sync codes are sent on sync channel
@@ -376,13 +392,22 @@ const byte OutputMatrixSize = nOutputs;
   byte OutputStateMatrix[MaxStates+1][OutputMatrixSize] = {0};
 #endif
 byte smGlobalCounterReset[MaxStates+1] = {0}; // For each state, global counter to reset.
+#if MACHINE_TYPE == 4
+  byte analogThreshEnable[MaxStates+1] = {0}; // Bits indicate analog thresholds to enable in each state
+  byte analogThreshDisable[MaxStates+1] = {0}; // Bits indicate analog thresholds to disable in each state
+#endif
 byte GlobalTimerStartMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer onset events
 byte GlobalTimerEndMatrix[MaxStates+1][MAX_GLOBAL_TIMERS] = {0}; // Matrix contatining state transitions for global timer elapse events
 byte GlobalCounterMatrix[MaxStates+1][MAX_GLOBAL_COUNTERS] = {0}; // Matrix contatining state transitions for global counter threshold events
 byte ConditionMatrix[MaxStates+1][MAX_CONDITIONS] = {0}; // Matrix contatining state transitions for conditions
 boolean GlobalTimersTriggered[MAX_GLOBAL_TIMERS] = {0}; // 0 if timer x was not yet triggered, 1 if it was triggered and had not elapsed.
 boolean GlobalTimersActive[MAX_GLOBAL_TIMERS] = {0}; // 0 if timer x is inactive (e.g. not triggered, or during onset delay after trigger), 1 if it's active.
-byte SerialMessageMatrix[MaxStates+1][nSerialChannels][3]; // Stores a 3-byte serial message for each message byte on each port
+#if MACHINE_TYPE < 3
+  const byte SerialMessageMaxBytes = 3;
+#else
+  const byte SerialMessageMaxBytes = 5;
+#endif
+byte SerialMessageMatrix[MaxStates+1][nSerialChannels][SerialMessageMaxBytes]; // Stores a 5-byte serial message for each message byte on each port
 byte SerialMessage_nBytes[MaxStates+1][nSerialChannels] = {1}; // Stores the length of each serial message
 boolean ModuleConnected[nSerialChannels] = {false}; // true for each channel if a module is connected, false otherwise
 byte SyncChannelOriginalType = 0; // Stores sync channel's original hardware type
@@ -476,6 +501,23 @@ boolean smaReady2Load = false; // If a state matrix was read into the serial buf
 boolean runFlag = false; // True if a command to run a state matrix arrives while an SM transmission is ongoing. Set to false once new SM starts.
 uint16_t nSMBytesRead = 0; // For state matrix transmission during trial, where bytes transmitted must be tracked across timer interrupts
 boolean startFlag = false; // True if a USB 'R' code was received in a timer callback. Used to start the state matrix from the main loop.
+boolean firstTrialFlag = false; // True if running the first trial of the session
+boolean acquiringAnalog = false; // True if analog samples are being measured and returned to PC
+byte flexChannelToSet = 0; // For configuring flex channels
+byte thresholdIndexToSet = 0; // For configuring flex channels
+byte thisAnalogEnable = 0; // For configuring analog thresholds
+byte adcBufferPos = 1;
+
+#if MACHINE_TYPE == 4
+  // Analog Input Threshold Vars
+  uint16_t analogThreshold1[nFlexIO] = {4095}; // Analog value of threshold# 1
+  uint16_t analogThreshold2[nFlexIO] = {4095}; // Analog value of threshold# 2
+  byte analogThreshold1Polarity[nFlexIO] = {0}; // 0: Trig if val > T, 1: Trig if val < T
+  byte analogThreshold2Polarity[nFlexIO] = {0}; 
+  byte analogThreshold1Enabled[nFlexIO] = {0}; // Only enabled thresholds generate events. Thresholds are disabled after being triggered.
+  byte analogThreshold2Enabled[nFlexIO] = {0};
+  byte analogThresholdMode[nFlexIO] = {0}; // 0: T1 and T2 are Independent thresholds with manual reset, 1: Crossing T2 resets T1, Crossing T1 resets T2
+#endif
 
 union {
   byte Bytes[maxCurrentEvents*4];
@@ -496,8 +538,8 @@ union {
 
 #if MACHINE_TYPE == 4 
 union {
-    byte byteArray[8];
-    uint16_t uint16[4];
+    byte byteArray[10];
+    uint16_t uint16[5];
 } adcBuffer; // For transmitting ADC data
 #endif
 
@@ -698,9 +740,6 @@ void setup() {
      digitalWrite(SyncRegisterLatch, LOW);
   }
   CurrentEventBuffer[0] = 1;
-  #if MACHINE_TYPE == 4
-    adcBuffer.byteArray[0] = 3; // The first byte is op 3, read ADC data
-  #endif
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
   #if MACHINE_TYPE < 3
     Timer3.attachInterrupt(handler); // Timer3 is Arduino Due's hardware timer, which will trigger the function "handler" precisely every (timerPeriod) us
@@ -786,8 +825,15 @@ void handler() { // This is the timer handler function, which is called every (t
         PC.writeUint16(FIRMWARE_VERSION);
         PC.writeUint16(MACHINE_TYPE);
       break;
+      case '{': // Send handshake response byte on SerialUSB1 (used for soft codes from a third-party app (e.g. Bonsai))
+        PC1.writeByte(222);
+      break;
+      case '}': // Send handshake response byte on SerialUSB2 (used for analog data)
+        PC2.writeByte(223);
+      break;
       case '*': // Reset session clock
         resetSessionClock();
+        trialCounter = 0;
         PC.writeByte(1);
       break;
       case ':': // Enable/Disable status LED
@@ -813,6 +859,7 @@ void handler() { // This is the timer handler function, which is called every (t
         PC.writeUint16(MaxStates);
         PC.writeUint16(timerPeriod);
         PC.writeByte(maxSerialEvents);
+        PC.writeByte(SerialMessageMaxBytes);
         PC.writeByte(MAX_GLOBAL_TIMERS);
         PC.writeByte(MAX_GLOBAL_COUNTERS);
         PC.writeByte(MAX_CONDITIONS);
@@ -912,7 +959,6 @@ void handler() { // This is the timer handler function, which is called every (t
         #if MACHINE_TYPE == 4
           PC.readByteArray(flexIOChannelType, nFlexIO);
           setFlexIOChannelTypes();
-          adcBuffer.byteArray[1] = FlexIO.nADC;
           PC.writeByte(1);
         #endif
       break;   
@@ -928,6 +974,41 @@ void handler() { // This is the timer handler function, which is called every (t
           PC.writeByte(1);
         #endif
       break;
+
+      
+      #if MACHINE_TYPE == 4
+        case 't': // Set analog threshold value
+          PC.readUint16Array(analogThreshold1, nFlexIO);
+          PC.readUint16Array(analogThreshold2, nFlexIO);
+          PC.writeByte(1);
+        break;
+        case 'p': // Set analog threshold polarity
+          PC.readByteArray(analogThreshold1Polarity, nFlexIO);
+          PC.readByteArray(analogThreshold2Polarity, nFlexIO);
+          PC.writeByte(1);
+        break;
+        case 'm': // Set analog threshold mode
+          PC.readByteArray(analogThresholdMode, nFlexIO);
+          PC.writeByte(1);
+        break; 
+        case 'e': // Set analog threshold enabled/disabled
+          flexChannelToSet = PC.readByte();
+          thresholdIndexToSet = PC.readByte();
+          if (flexChannelToSet < nFlexIO) {
+            switch (thresholdIndexToSet) {
+              case 0:
+                analogThreshold1Enabled[flexChannelToSet] = PC.readByte();
+                PC.writeByte(1);
+              break;
+              case 1:
+                analogThreshold2Enabled[flexChannelToSet] = PC.readByte();
+                PC.writeByte(1);
+              break;
+            }
+          }
+        break;
+      #endif    
+
       case 'O':  // Override digital hardware state
         overrideChan = PC.readByte();
         overrideChanState = PC.readByte();
@@ -1068,10 +1149,10 @@ void handler() { // This is the timer handler function, which is called every (t
         }
       break;
       case '~': // USB soft code
-        SoftEvent = PC.readByte();
-        if (!RunningStateMatrix) {
-          SoftEvent = 255; // 255 = No Event
-        }
+          SoftEvent1 = PC.readByte();
+          if (!RunningStateMatrix) {
+            SoftEvent1 = 255; // 255 = No Event
+          }
       break;
       case 'C': // Get new compressed state matrix from MATLAB/Python 
         newSMATransmissionStarted = true;
@@ -1110,9 +1191,30 @@ void handler() { // This is the timer handler function, which is called every (t
         MatrixFinished = true;
         RunningStateMatrix = false;
         resetOutputs(); // Returns all lines to low by forcing final state
+        acquiringAnalog = false;
       break;
     } // End switch commandbyte
   } // End SerialUSB.available
+  #if MACHINE_TYPE > 2
+    if (PC1.available()>0) {
+      SoftEvent2 = PC1.readByte();
+      if (!RunningStateMatrix) {
+        SoftEvent2 = 255; // 255 = No Event
+      }
+    }
+  #endif
+  #if MACHINE_TYPE == 4
+    if (acquiringAnalog) { 
+      if (FlexIO.nADC > 0) {
+        flexIO_ADC_Sample_Clock++;
+        if (flexIO_ADC_Sample_Clock == flexIO_ADC_Sample_Interval) {
+          flexIO_ADC_Sample_Clock = 0;          
+          FlexIO.readADC();
+          flexIO_updateAIflag = true;
+        }
+      }
+    }
+  #endif
   if (RunningStateMatrix) {
     if (firstLoop == 1) { 
       firstLoop = 0;
@@ -1121,15 +1223,20 @@ void handler() { // This is the timer handler function, which is called every (t
       #else
         delayMicroseconds(25); // Delay so that the i/o + timing matches subsequent loops (which include ~25us of processing first)
       #endif
+      trialCounter++;
       MatrixStartTimeMicros = sessionTimeMicros(); 
       timeBuffer.uint64[0] = MatrixStartTimeMicros;
       PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
       SyncWrite();
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
       #if MACHINE_TYPE == 4
-        flexIO_ADC_Sample_Clock = 0;
         updateFlexOutputs();
+        if (firstTrialFlag) {
+          flexIO_ADC_Sample_Clock = flexIO_ADC_Sample_Interval-1; // Start fist analog sample at session t=0
+          acquiringAnalog = true; // Acquire analog if any channels are configued as AIN
+        }
       #endif
+      firstTrialFlag = false;
     } else {
       CurrentTime++;
       for (int i = BNCInputPos; i < nInputs; i++) {
@@ -1138,23 +1245,16 @@ void handler() { // This is the timer handler function, which is called every (t
         } 
       }
       #if MACHINE_TYPE == 4 
-        if (FlexIO.nADC > 0) {
-          flexIO_ADC_Sample_Clock++;
-          if (flexIO_ADC_Sample_Clock == flexIO_ADC_Sample_Interval) {
-            flexIO_ADC_Sample_Clock = 0;          
-            FlexIO.readADC();
-            flexIO_updateAIflag = true;
-          }
-        }
         FlexIO.readDI();
         for (int i = 0; i < nFlexIO; i++) {
           if (flexIOChannelType[i] == 0) {
             if (inputEnabled[i+FlexInputPos] && !inputOverrideState[i+FlexInputPos]) {
               inputState[i+FlexInputPos] = FlexIO.getDI(i);
             }
-          }
+          } 
         }
       #endif
+      
       // Determine if a handled condition occurred
       Ev = ConditionPos;
       for (int i = 0; i < nConditionsUsed; i++) {
@@ -1165,6 +1265,59 @@ void handler() { // This is the timer handler function, which is called every (t
         }
         Ev++;
       }
+
+      #if MACHINE_TYPE == 4 
+        // Determine if an analog input threshold was crossed
+        Ev = maxSerialEvents;
+        for (int i = 0; i < nFlexIO; i++) {
+         if (flexIOChannelType[i] == 2) {
+            if (flexIO_updateAIflag) {
+              uint16_t thisAnalogVal = FlexIO.adcReadout[i];
+              if (analogThreshold1Enabled[i]) {
+                if (analogThreshold1Polarity[i] == 0) {
+                  if (thisAnalogVal > analogThreshold1[i]) {
+                    CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+                    analogThreshold1Enabled[i] = 0;
+                    if (analogThresholdMode[i] == 1) {
+                      analogThreshold2Enabled[i] = 1;
+                    }
+                  }
+                } else {
+                  if (thisAnalogVal < analogThreshold1[i]) {
+                    CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+                    analogThreshold1Enabled[i] = 0;
+                    if (analogThresholdMode[i] == 1) {
+                      analogThreshold2Enabled[i] = 1;
+                    }
+                  }
+                }
+              }
+              Ev++;
+              if (analogThreshold2Enabled[i]) {
+                if (analogThreshold2Polarity[i] == 0) {
+                  if (thisAnalogVal > analogThreshold2[i]) {
+                    CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+                    analogThreshold2Enabled[i] = 0;
+                    if (analogThresholdMode[i] == 1) {
+                      analogThreshold1Enabled[i] = 1;
+                    }
+                  }
+                } else {
+                  if (thisAnalogVal < analogThreshold2[i]) {
+                    CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+                    analogThreshold2Enabled[i] = 0;
+                    if (analogThresholdMode[i] == 1) {
+                      analogThreshold1Enabled[i] = 1;
+                    }
+                  }
+                }
+              }
+              Ev++;
+            }
+          }
+        }
+      #endif
+      
       // Determine if a digital low->high or high->low transition event occurred
       Ev = maxSerialEvents;
       for (int i = DigitalInputPos; i < nInputs; i++) {
@@ -1243,9 +1396,9 @@ void handler() { // This is the timer handler function, which is called every (t
           }
           break;
           case 'X':
-              if (SoftEvent < 255) {
-                CurrentEvent[nCurrentEvents] = SoftEvent + Ev; nCurrentEvents++;
-                SoftEvent = 255;
+              if (SoftEvent1 < nModuleEvents[USBInputPos]) {
+                CurrentEvent[nCurrentEvents] = SoftEvent1 + Ev; nCurrentEvents++;
+                SoftEvent1 = 255;
               }
           break;
         }
@@ -1420,25 +1573,25 @@ void handler() { // This is the timer handler function, which is called every (t
         }
       }
       updateFlexOutputs(); // If setStateOutputs or global timer linked channels set FlexOutput update flags, the latest values are written
-      // Send analog values captured from FlexI/O channels
-      byte adcBufferPos = 1;
-      #if MACHINE_TYPE == 4 // Send back analog data
-        if (flexIO_updateAIflag) {
-          flexIO_updateAIflag = false;
-          for (int i = 0; i < nFlexIO; i++) {
-            if (flexIOChannelType[i] == 2) {
-              adcBuffer.uint16[adcBufferPos] = FlexIO.adcReadout[i];
-              adcBufferPos++;
-            }
-          }
-          PC.writeByteArray(adcBuffer.byteArray, adcBufferPos*2);  
-        }     
-      #endif
     } // End code to run after first loop
   }  else { // If not running state matrix
     
    
   } // End if not running state matrix
+  #if MACHINE_TYPE == 4 // Send back analog data
+    if (flexIO_updateAIflag) { // Send analog values captured from FlexI/O channels
+      flexIO_updateAIflag = false;  
+      adcBuffer.uint16[0] = trialCounter;  
+      adcBufferPos = 1;
+      for (int i = 0; i < nFlexIO; i++) {
+        if (flexIOChannelType[i] == 2) {
+          adcBuffer.uint16[adcBufferPos] = FlexIO.adcReadout[i];
+          adcBufferPos++;
+        }
+      }
+      PC2.writeByteArray(adcBuffer.byteArray, adcBufferPos*2);  
+    }     
+  #endif
   if (MatrixFinished) {
     if (SyncMode == 0) {
       ResetSyncLine();
@@ -1584,7 +1737,7 @@ void updateStatusLED(int Mode) {
               }
               analogWrite(BlueLEDPin, LEDBrightness);
               #if MACHINE_TYPE == 4
-                analogWrite(RedLEDPin, LEDBrightness/2.5);
+                analogWrite(RedLEDPin, LEDBrightness/4.5);
               #endif
             }
           }
@@ -1680,11 +1833,24 @@ void setStateOutputs(byte State) {
         thisChannel++;
         break;
         case 'X':
-        if (OutputStateMatrix[State][i] > 0) {
-          serialByteBuffer[0] = 2; // Code for MATLAB to receive soft-code byte
-          serialByteBuffer[1] = OutputStateMatrix[State][i]; // Soft code byte
-          PC.writeByteArray(serialByteBuffer, 2);
-        }
+          if (OutputStateMatrix[State][i] > 0) {
+            #if MACHINE_TYPE < 5
+              serialByteBuffer[0] = 2; // Code for MATLAB to receive soft-code byte
+              serialByteBuffer[1] = OutputStateMatrix[State][i]; // Soft code byte
+              PC.writeByteArray(serialByteBuffer, 2);
+            #else
+//              thisMessage = OutputStateMatrix[State][i];
+//              if (thisMessage > 0) {
+//                nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
+//                serialByteBuffer[0] = nMessageBytes;
+//                for (int j = 0; j < nMessageBytes; j++) {
+//                   serialByteBuffer[j+1] = SerialMessageMatrix[thisMessage][thisChannel][j];
+//                }
+//                PC1.writeByteArray(serialByteBuffer, SerialMessageMaxBytes+1);
+//              }
+            #endif
+          }
+          thisChannel++;
         break;
         case 'D':
         case 'B':
@@ -1737,7 +1903,26 @@ void setStateOutputs(byte State) {
     GlobalCounterCounts[CurrentCounter] = 0;
     GlobalCounterHandled[CurrentCounter] = false;
   }
-
+  #if MACHINE_TYPE == 4
+    thisAnalogEnable = analogThreshEnable[State];
+    if (thisAnalogEnable > 0) {
+      for (int i = 0; i < nFlexIO; i++) {
+        if (bitRead(thisAnalogEnable, i)) {
+            analogThreshold1Enabled[i] = 1;
+            analogThreshold2Enabled[i] = 1;
+        }
+      }
+    }
+    thisAnalogEnable = analogThreshDisable[State];
+    if (thisAnalogEnable > 0) {
+      for (int i = 0; i < nFlexIO; i++) {
+        if (bitRead(thisAnalogEnable, i)) {
+            analogThreshold1Enabled[i] = 0;
+            analogThreshold2Enabled[i] = 0;
+        }
+      }
+    }
+  #endif
   // Enable state timer only if handled
   if (StateTimerMatrix[State] != State) {
     MeaningfulStateTimer = true;
@@ -1826,6 +2011,9 @@ uint64_t sessionTimeMicros() {
 void resetSessionClock() {
     sessionStartTimeMicros = micros();
     nMicrosRollovers = 0;
+    #if MACHINE_TYPE == 4
+      firstTrialFlag = true;
+    #endif
 }
 
 void resetSerialMessages() {
@@ -1936,6 +2124,21 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
           #endif
         }
       }
+    break;
+    case 'X':
+      // Todo: Send soft code to primary USB (currently not supported if message is more than 1 byte)
+    break;
+    case 'Z':
+      if (op == 1) {
+        thisMessage = GlobalTimerOnMessage[timerChan];
+      } else {
+        thisMessage = GlobalTimerOffMessage[timerChan];
+      }
+      nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
+      for (int i = 0; i < nMessageBytes; i++) {
+         serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
+      }
+      PC1.writeByteArray(serialByteBuffer, nMessageBytes);
     break;
     case 'B': // Digital IO (BNC, Wire, Digital, Valve-line)
     case 'W':
@@ -2310,10 +2513,26 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     for (int i = 0; i < nConditionsUsed; i++) {
       ConditionValues[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
     }
-    for (int i = 0; i < nStates; i++) {
-      smGlobalCounterReset[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+    nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
+    for (int i = 0; i < nOverrides; i++) {
+      col = StateMatrixBuffer[bufferPos]; bufferPos++;
+      val = StateMatrixBuffer[bufferPos]; bufferPos++;
+      smGlobalCounterReset[col] = val;
     }
-
+    #if MACHINE_TYPE == 4
+      nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
+      for (int i = 0; i < nOverrides; i++) {
+        col = StateMatrixBuffer[bufferPos]; bufferPos++;
+        val = StateMatrixBuffer[bufferPos]; bufferPos++;
+        analogThreshEnable[col] = val;
+      }
+      nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
+      for (int i = 0; i < nOverrides; i++) {
+        col = StateMatrixBuffer[bufferPos]; bufferPos++;
+        val = StateMatrixBuffer[bufferPos]; bufferPos++;
+        analogThreshDisable[col] = val;
+      }
+    #endif
     #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
         for (int i = 0; i < nStates; i++) {
           smGlobalTimerTrig[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
@@ -2555,7 +2774,8 @@ void startSM() {
   previousState = 0;
   CurrentState = 0;
   nEvents = 0;
-  SoftEvent = 255; // No event
+  SoftEvent1 = 255; // No event
+  SoftEvent2 = 255;
   MatrixFinished = false;
   #if LIVE_TIMESTAMPS == 0
     if (usesFRAM) {
