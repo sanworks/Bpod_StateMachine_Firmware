@@ -119,13 +119,12 @@
   ArCOM Module2(Serial2);
   ArCOM Module3(Serial3);
 #elif MACHINE_TYPE == 3
-  #if !defined(CDC2_STATUS_INTERFACE)
-  #error Error! You must choose 'Double Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
+  #if !defined(USB_DUAL_SERIAL)
+    #error Error! You must choose 'Dual Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
   #endif
   #if ETHERNET_COM == 0 
     ArCOM PC(SerialUSB);
     ArCOM PC1(SerialUSB1); 
-    ArCOM PC2(SerialUSB2); 
   #else
     ArCOMvE PC(Serial5); 
   #endif
@@ -137,8 +136,8 @@
     ArCOM Module5(Serial5); 
   #endif
 #elif MACHINE_TYPE == 4
-  #if !defined(CDC3_STATUS_INTERFACE)
-  #error Error! You must choose 'Triple Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
+  #if !defined(USB_TRIPLE_SERIAL)
+    #error Error! You must choose 'Triple Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
   #endif
   ArCOM PC(SerialUSB);
   ArCOM PC1(SerialUSB1); 
@@ -197,26 +196,30 @@ const byte nOutputs = sizeof(OutputHW);
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
   const int SerialBaudRate = 115200; // Transfer speed of hardware serial (Module) ports
+  byte hardwareRevisionArray[5] = {25,26,27,28,29};
 #elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
   const byte nSerialChannels = 4; 
   const byte maxSerialEvents = 60;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
+  byte hardwareRevisionArray[5] = {23,26,27,35,37};
 #elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0-2.3)
   #if ETHERNET_COM == 0
-    const byte nSerialChannels = 7; 
-    const byte maxSerialEvents = 105;
+    const byte nSerialChannels = 6; 
+    const byte maxSerialEvents = 90;
   #else
     const byte nSerialChannels = 5; 
     const byte maxSerialEvents = 75;
   #endif
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
+  byte hardwareRevisionArray[5] = {25,26,27,28,29};
 #elif MACHINE_TYPE == 4  // Teensy 4.1 based state machines (r2+ v1.0)
   const byte nSerialChannels = 4; 
   const byte maxSerialEvents = 60;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
+  byte hardwareRevisionArray[5] = {27,28,29,30,31};
 #endif
 
 uint16_t timerPeriod = 100; // Hardware timer period, in microseconds (state machine refresh period)
@@ -251,9 +254,9 @@ byte nConditionsUsed = MAX_CONDITIONS;
 #endif
 
 // Serial buffers
-byte HWSerialBuf1[192] = {0};
-byte HWSerialBuf2[192] = {0};
-#if MACHINE_TYPE > 1
+#if MACHINE_TYPE > 2
+  byte HWSerialBuf1[192] = {0};
+  byte HWSerialBuf2[192] = {0};
   byte HWSerialBuf3[192] = {0};
 #endif
 #if MACHINE_TYPE == 3
@@ -458,7 +461,7 @@ boolean GlobalCounterHandled[MAX_GLOBAL_COUNTERS] = {false};
 byte ConditionChannels[MAX_CONDITIONS] = {254}; // Event each channel a condition is attached to
 byte ConditionValues[MAX_CONDITIONS] = {0}; // The value of each condition
 const int MaxTimestamps = 10000;
-#if MACHINE_TYPE != 2
+#if MACHINE_TYPE == 1
   unsigned long Timestamps[MaxTimestamps] = {0};
 #endif
 unsigned long StateTimers[MaxStates+1] = {0}; // Timers for each state
@@ -507,6 +510,7 @@ byte flexChannelToSet = 0; // For configuring flex channels
 byte thresholdIndexToSet = 0; // For configuring flex channels
 byte thisAnalogEnable = 0; // For configuring analog thresholds
 byte adcBufferPos = 1;
+byte hardwareRevision = 0;
 
 #if MACHINE_TYPE == 4
   // Analog Input Threshold Vars
@@ -663,16 +667,22 @@ void setup() {
           switch(Byte1) {
             case 0:
               Serial1.begin(SerialBaudRate); Byte1++;
-              Serial1.addMemoryForRead(HWSerialBuf1, 192);
+              #if MACHINE_TYPE > 2
+                Serial1.addMemoryForRead(HWSerialBuf1, 192);
+              #endif
             break;
             case 1:
               Serial2.begin(SerialBaudRate); Byte1++;
-              Serial2.addMemoryForRead(HWSerialBuf2, 192);
+              #if MACHINE_TYPE > 2
+                Serial2.addMemoryForRead(HWSerialBuf2, 192);
+              #endif
             break;
             #if MACHINE_TYPE == 2 || Machine_TYPE == 3
                 case 2:
                   Serial3.begin(SerialBaudRate); Byte1++;
-                  Serial3.addMemoryForRead(HWSerialBuf3, 192);
+                  #if MACHINE_TYPE > 2
+                    Serial3.addMemoryForRead(HWSerialBuf3, 192);
+                  #endif
                 break;
             #elif MACHINE_TYPE == 4
                 case 2:
@@ -739,6 +749,15 @@ void setup() {
      pinMode(SyncRegisterLatch, OUTPUT); // CS pin for sync shift register IC
      digitalWrite(SyncRegisterLatch, LOW);
   }
+  // Read hardware revision from circuit board (an array of grounded pins indicates revision in binary, grounded = 1, floating = 0)
+  hardwareRevision = 0;
+  for (int i = 0; i < 5; i++) {
+    pinMode(hardwareRevisionArray[i], INPUT_PULLUP);
+    hardwareRevision += pow(2, i)*digitalRead(hardwareRevisionArray[i]);
+    pinMode(hardwareRevisionArray[i], INPUT);
+  }
+  hardwareRevision = 31-hardwareRevision;
+  
   CurrentEventBuffer[0] = 1;
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
   #if MACHINE_TYPE < 3
@@ -825,11 +844,18 @@ void handler() { // This is the timer handler function, which is called every (t
         PC.writeUint16(FIRMWARE_VERSION);
         PC.writeUint16(MACHINE_TYPE);
       break;
+      case 'v': // Return state machine circuit board revision
+        PC.writeByte(hardwareRevision);
+      break;
       case '{': // Send handshake response byte on SerialUSB1 (used for soft codes from a third-party app (e.g. Bonsai))
-        PC1.writeByte(222);
+        #if MACHINE_TYPE > 2
+          PC1.writeByte(222);
+        #endif
       break;
       case '}': // Send handshake response byte on SerialUSB2 (used for analog data)
-        PC2.writeByte(223);
+        #if MACHINE_TYPE == 4
+          PC2.writeByte(223);
+        #endif
       break;
       case '*': // Reset session clock
         resetSessionClock();
@@ -2129,16 +2155,18 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
       // Todo: Send soft code to primary USB (currently not supported if message is more than 1 byte)
     break;
     case 'Z':
-      if (op == 1) {
-        thisMessage = GlobalTimerOnMessage[timerChan];
-      } else {
-        thisMessage = GlobalTimerOffMessage[timerChan];
-      }
-      nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
-      for (int i = 0; i < nMessageBytes; i++) {
-         serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
-      }
-      PC1.writeByteArray(serialByteBuffer, nMessageBytes);
+      #if MACHINE_TYPE > 2
+        if (op == 1) {
+          thisMessage = GlobalTimerOnMessage[timerChan];
+        } else {
+          thisMessage = GlobalTimerOffMessage[timerChan];
+        }
+        nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
+        for (int i = 0; i < nMessageBytes; i++) {
+           serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
+        }
+        PC1.writeByteArray(serialByteBuffer, nMessageBytes);
+      #endif
     break;
     case 'B': // Digital IO (BNC, Wire, Digital, Valve-line)
     case 'W':

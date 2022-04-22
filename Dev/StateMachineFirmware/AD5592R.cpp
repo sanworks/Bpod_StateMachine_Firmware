@@ -186,22 +186,26 @@ void AD5592R::updateChannelTypes() {
 }
 
 void AD5592R::writeRegister() {
-  // SPI settings can be used to speed up DAC and DO writes
-  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
-  digitalWriteFast(CSPin, LOW);
-  SPI.transfer16(registerBuffer.uint16[0]);
-  digitalWriteFast(CSPin, HIGH);
-  SPI.endTransaction();
-  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
-  SPI.endTransaction();
+  #if MACHINE_TYPE > 2
+    // SPI settings can be used to speed up DAC and DO writes
+    SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
+    digitalWriteFast(CSPin, LOW);
+    SPI.transfer16(registerBuffer.uint16[0]);
+    digitalWriteFast(CSPin, HIGH);
+    SPI.endTransaction();
+    SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
+    SPI.endTransaction();
+  #endif
 }
 
 uint16_t AD5592R::readRegister() {
-  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
-  digitalWriteFast(CSPin, LOW);
-  registerBuffer.uint16[0] = SPI.transfer16(registerBuffer.uint16[0]);
-  digitalWriteFast(CSPin, HIGH);
-  SPI.endTransaction();
-  SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
-  SPI.endTransaction();
+  #if MACHINE_TYPE > 2
+    SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
+    digitalWriteFast(CSPin, LOW);
+    registerBuffer.uint16[0] = SPI.transfer16(registerBuffer.uint16[0]);
+    digitalWriteFast(CSPin, HIGH);
+    SPI.endTransaction();
+    SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE1)); // To force clock line low so LED is off
+    SPI.endTransaction();
+  #endif
 }
