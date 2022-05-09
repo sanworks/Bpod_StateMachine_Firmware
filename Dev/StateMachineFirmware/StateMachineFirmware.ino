@@ -2,7 +2,7 @@
   ----------------------------------------------------------------------------
 
   This file is part of the Sanworks Bpod_Gen2 repository
-  Copyright (C) 2021 Sanworks LLC, Rochester, New York, USA
+  Copyright (C) 2022 Sanworks LLC, Rochester, New York, USA
 
   ----------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@
 //////////////////////////////////////////
 // 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0-2.3 (Teensy 3.6); 4 = Bpod 2+ r1.0
 
-#define MACHINE_TYPE 4 
+#define MACHINE_TYPE 3 
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -677,7 +677,7 @@ void setup() {
                 Serial2.addMemoryForRead(HWSerialBuf2, 192);
               #endif
             break;
-            #if MACHINE_TYPE == 2 || Machine_TYPE == 3
+            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
                 case 2:
                   Serial3.begin(SerialBaudRate); Byte1++;
                   #if MACHINE_TYPE > 2
