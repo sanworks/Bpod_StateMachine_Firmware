@@ -186,7 +186,7 @@ void AD5592R::updateChannelTypes() {
 }
 
 void AD5592R::writeRegister() {
-  #if MACHINE_TYPE > 2
+  #if defined(TEENSYDUINO) 
     // SPI settings can be used to speed up DAC and DO writes
     SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
     digitalWriteFast(CSPin, LOW);
@@ -199,7 +199,7 @@ void AD5592R::writeRegister() {
 }
 
 uint16_t AD5592R::readRegister() {
-  #if MACHINE_TYPE > 2
+  #if defined(TEENSYDUINO) 
     SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
     digitalWriteFast(CSPin, LOW);
     registerBuffer.uint16[0] = SPI.transfer16(registerBuffer.uint16[0]);
