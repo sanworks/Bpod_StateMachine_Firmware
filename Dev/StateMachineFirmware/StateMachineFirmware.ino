@@ -781,6 +781,10 @@ void loop() {
         smaReady2Load = true;
       } else {
         loadStateMatrix();
+        if (RunStateMatrixASAP) {
+          RunStateMatrixASAP = false;
+          startFlag = true; // Start the state matrix without waiting for an explicit 'R' command.
+        }
       }
     }
   #endif
@@ -1205,15 +1209,15 @@ void handler() { // This is the timer handler function, which is called every (t
             #if MACHINE_TYPE == 4
               nSMBytesRead = 0;
               smaPending = true;
-            #elif MACHINE_TYPE > 1
+            #elif MACHINE_TYPE < 4
               PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
               smaTransmissionConfirmed = true;
+              loadStateMatrix(); // Loads the state matrix from the buffer into the relevant variables
+              if (RunStateMatrixASAP) {
+                RunStateMatrixASAP = false;
+                startFlag = true; // Start the state matrix without waiting for an explicit 'R' command.
+              }
             #endif
-            loadStateMatrix(); // Loads the state matrix from the buffer into the relevant variables
-            if (RunStateMatrixASAP) {
-              RunStateMatrixASAP = false;
-              startFlag = true; // Start the state matrix without waiting for an explicit 'R' command.
-            }
           }
         }
       break;
