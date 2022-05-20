@@ -776,8 +776,12 @@ void loop() {
     if (smaPending) { // If a request to read a new state matrix arrived during a trial, read here at lower priority (in free time between timer interrupts)
       PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes);
       smaTransmissionConfirmed = true;
-      smaReady2Load = true;
       smaPending = false;
+      if (RunningStateMatrix) {
+        smaReady2Load = true;
+      } else {
+        loadStateMatrix();
+      }
     }
   #endif
   currentTimeMicros = micros();
@@ -1198,7 +1202,10 @@ void handler() { // This is the timer handler function, which is called every (t
               PC.writeByte(0);
             #endif
           } else {
-            #if MACHINE_TYPE > 1
+            #if MACHINE_TYPE == 4
+              nSMBytesRead = 0;
+              smaPending = true;
+            #elif MACHINE_TYPE > 1
               PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
               smaTransmissionConfirmed = true;
             #endif
