@@ -74,7 +74,8 @@
 //////////////////////////////////////////
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
-#define FIRMWARE_VERSION 23
+#define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
+#define FIRMWARE_VERSION_MINOR 1 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -788,11 +789,6 @@ void loop() {
       }
     }
   #endif
-  currentTimeMicros = micros();
-  if (currentTimeMicros < lastTimeMicros) {
-    nMicrosRollovers++;
-  }
-  lastTimeMicros = currentTimeMicros;
   if (startFlag == true) {
      startSM();
      startFlag = false;
@@ -800,6 +796,11 @@ void loop() {
 }
 
 void handler() { // This is the timer handler function, which is called every (timerPeriod) us
+  currentTimeMicros = micros();
+  if (currentTimeMicros < lastTimeMicros) {
+    nMicrosRollovers++;
+  }
+  lastTimeMicros = currentTimeMicros;
   if (connectionState == 0) { // If not connected to Bpod software
     if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte to any connected USB serial port
       #if ETHERNET_COM == 0
@@ -848,9 +849,12 @@ void handler() { // This is the timer handler function, which is called every (t
           digitalWrite(ValveEnablePin, HIGH); // Enable valve driver
         #endif
       break;
-      case 'F':  // Return firmware and machine type
-        PC.writeUint16(FIRMWARE_VERSION);
+      case 'F':  // Return major firmware version and machine type
+        PC.writeUint16(FIRMWARE_VERSION_MAJOR);
         PC.writeUint16(MACHINE_TYPE);
+      break;
+      case 'f': // Return minor firmware version
+        PC.writeUint16(FIRMWARE_VERSION_MINOR);
       break;
       case 'v': // Return state machine circuit board revision
         PC.writeByte(hardwareRevision);
