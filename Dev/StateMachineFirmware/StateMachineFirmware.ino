@@ -75,7 +75,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 1 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 2 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
