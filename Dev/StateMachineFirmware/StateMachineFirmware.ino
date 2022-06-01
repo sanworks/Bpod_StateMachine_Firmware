@@ -294,6 +294,14 @@ byte fRAMcs = 1;
 byte fRAMhold = A3;
 byte SyncRegisterLatch = 23;
 
+//psRAM vars
+#if MACHINE_TYPE == 4
+  // PSRAM setup (for bench testing only, PSRAM is not used in current firmware)
+  extern "C" uint8_t external_psram_size;
+  uint32_t *memory_begin, *memory_end;
+  boolean memOK = false;
+#endif
+
 // Settings for version-specific hardware (initialized in setup)
 boolean usesFRAM = false;
 boolean usesSPISync = false;
@@ -635,6 +643,8 @@ void setup() {
   SPI.begin();
   #if MACHINE_TYPE == 4
     setFlexIOChannelTypes();
+    memory_begin = (uint32_t *)(0x70000000); // PSRAM start address
+    memory_end = (uint32_t *)(0x70000000 + external_psram_size * 1048576); // PSRAM end address
   #endif
   
   // Configure input channels
@@ -1012,8 +1022,6 @@ void handler() { // This is the timer handler function, which is called every (t
           PC.writeByte(1);
         #endif
       break;
-
-      
       #if MACHINE_TYPE == 4
         case 't': // Set analog threshold value
           PC.readUint16Array(analogThreshold1, nFlexIO);
@@ -1044,6 +1052,25 @@ void handler() { // This is the timer handler function, which is called every (t
               break;
             }
           }
+        break;
+        case '_': // Test PSRAM
+          // This memory test was adopted from PJRC's teensy41_psram_memtest repository : https://github.com/PaulStoffregen/teensy41_psram_memtest
+          // Thanks Paul!
+            PC.writeByte(external_psram_size);
+            memOK = true;
+            if (!check_fixed_pattern(0x55555555)) {memOK = false;}
+            if (!check_fixed_pattern(0x33333333)) {memOK = false;}
+            if (!check_fixed_pattern(0x0F0F0F0F)) {memOK = false;}
+            if (!check_fixed_pattern(0x00FF00FF)) {memOK = false;}
+            if (!check_fixed_pattern(0x0000FFFF)) {memOK = false;}
+            if (!check_fixed_pattern(0xAAAAAAAA)) {memOK = false;}
+            if (!check_fixed_pattern(0xCCCCCCCC)) {memOK = false;}
+            if (!check_fixed_pattern(0xF0F0F0F0)) {memOK = false;}
+            if (!check_fixed_pattern(0xFF00FF00)) {memOK = false;}
+            if (!check_fixed_pattern(0xFFFF0000)) {memOK = false;}
+            if (!check_fixed_pattern(0xFFFFFFFF)) {memOK = false;}
+            if (!check_fixed_pattern(0x00000000)) {memOK = false;}
+            PC.writeByte(memOK);
         break;
       #endif    
 
@@ -2111,6 +2138,25 @@ byte digitalReadDirect(int pin) { // >10x Faster than digitalRead(), specific to
     return digitalReadFast(pin);
   #endif
 }
+
+#if MACHINE_TYPE == 4
+  // This PSRAM memory test was adopted from PJRC's teensy41_psram_memtest repository : https://github.com/PaulStoffregen/teensy41_psram_memtest
+  // Thanks Paul!!
+  bool check_fixed_pattern(uint32_t pattern)
+  {
+    volatile uint32_t *p;
+    for (p = memory_begin; p < memory_end; p++) {
+      *p = pattern;
+    }
+    arm_dcache_flush_delete((void *)memory_begin,
+      (uint32_t)memory_end - (uint32_t)memory_begin);
+    for (p = memory_begin; p < memory_end; p++) {
+      uint32_t actual = *p;
+      if (actual != pattern) return false;
+    }
+    return true;
+  }
+#endif
 
 void pwmWrite(byte channel, byte value) {
   #if MACHINE_TYPE < 3
