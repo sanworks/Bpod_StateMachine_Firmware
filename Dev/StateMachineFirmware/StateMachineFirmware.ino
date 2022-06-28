@@ -34,9 +34,9 @@
 //////////////////////////////////////////
 // Set hardware series (0.5, 0.7+, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0-2.3 (Teensy 3.6); 4 = Bpod 2+ r1.0
+// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0-2.4 (Teensy 3.6); 4 = Bpod 2+ r1.0
 
-#define MACHINE_TYPE 4 
+#define MACHINE_TYPE 3 
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -75,7 +75,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 2 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 3 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -520,6 +520,7 @@ byte thresholdIndexToSet = 0; // For configuring flex channels
 byte thisAnalogEnable = 0; // For configuring analog thresholds
 byte adcBufferPos = 1;
 byte hardwareRevision = 0;
+byte ModuleProbeBytes[2] = {255,255};
 
 #if MACHINE_TYPE == 4
   // Analog Input Threshold Vars
@@ -944,15 +945,15 @@ void handler() { // This is the timer handler function, which is called every (t
             }
           #endif
         #endif
-        Module1.writeByte(255);
-        Module2.writeByte(255);
+        Module1.writeByteArray(ModuleProbeBytes, 2);
+        Module2.writeByteArray(ModuleProbeBytes, 2);
         #if MACHINE_TYPE > 1
-          Module3.writeByte(255);
+          Module3.writeByteArray(ModuleProbeBytes, 2);
         #endif
         #if MACHINE_TYPE == 3
-          Module4.writeByte(255);
+          Module4.writeByteArray(ModuleProbeBytes, 2);
           #if ETHERNET_COM == 0
-            Module5.writeByte(255);
+            Module5.writeByteArray(ModuleProbeBytes, 2);
           #endif
         #endif
         nCycles = 0; // Number of cycles since request was sent
@@ -2329,6 +2330,14 @@ void relayModuleInfo(ArCOM serialCOM, byte moduleID) {
                   PC.writeByteArray(SerialRelayBuffer, Byte3);
                 }
               break;
+              case 'V': // Major hardware version number
+                PC.writeByte('V');
+                PC.writeByte(serialCOM.readByte());
+              break;
+              case 'v': // Minor hardware version number (
+                PC.writeByte('v');
+                PC.writeByte(serialCOM.readByte());
+              break;
             }
             Byte1 = serialCOM.readByte(); // 1 if more module info follows, 0 if not
           }
@@ -2341,6 +2350,9 @@ void relayModuleInfo(ArCOM serialCOM, byte moduleID) {
   }
   if (!moduleFound) {
     PC.writeByte(0); // Module not detected
+  }
+  while (serialCOM.available() > 0) { // Clear any redundant self descriptions. These may be caused by older modules responding to the second '255' request for self-description
+    serialCOM.readByte();
   }
 }
 
