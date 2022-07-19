@@ -75,7 +75,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 3 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 4 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -172,21 +172,21 @@
     byte OutputCh[] = {0,0,0,0,25,24,43,41,39,9,8,7,6,5,4,3,2,22,22,22,22,22,22,22,22};  
 #elif MACHINE_TYPE == 3 // Bpod State Machine r2.0-2.3
   #if ETHERNET_COM == 0
-    byte InputHW[] = {'U','U','U','U','U','X','B','B','P','P','P','P'};
-    byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
-    byte OutputHW[] = {'U','U','U','U','U','X','B','B','P','P','P','P','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21};  
+    byte InputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P'};
+    byte InputCh[] = {0,0,0,0,0,0,0,6,5,39,38,18,15};                                         
+    byte OutputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+    byte OutputCh[] = {0,0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21};  
   #else
-    byte InputHW[] = {'U','U','U','U','X','B','B','P','P','P','P'};
-    byte InputCh[] = {0,0,0,0,0,6,5,39,38,18,15};                                         
-    byte OutputHW[] = {'U','U','U','U','X','B','B','P','P','P','P','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
+    byte InputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P'};
+    byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
+    byte OutputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+    byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
   #endif
 #elif MACHINE_TYPE == 4 // Bpod State Machine 2+ r1.0
-    byte InputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P'};
-    byte InputCh[] = {0,0,0,0,0,0,0,0,6,5,39,38,17,16,41};                                         
-    byte OutputHW[] = {'U','U','U','X','F','F','F','F','B','B','P','P','P','P','P','V','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,1,2,3,4,3,36,37,15,14,18,20,19,21,22,23};  
+    byte InputHW[] = {'U','U','U','X','Z','F','F','F','F','B','B','P','P','P','P','P'};
+    byte InputCh[] = {0,0,0,0,0,0,0,0,0,6,5,39,38,17,16,41};                                         
+    byte OutputHW[] = {'U','U','U','X','Z','F','F','F','F','B','B','P','P','P','P','P','V','V','V','V','V'};
+    byte OutputCh[] = {0,0,0,0,0,0,1,2,3,4,3,36,37,15,14,18,20,19,21,22,23};  
 #endif
 
 // State machine meta information
@@ -206,18 +206,18 @@ const byte nOutputs = sizeof(OutputHW);
   byte hardwareRevisionArray[5] = {23,26,27,35,37};
 #elif MACHINE_TYPE == 3  // Teensy 3.6 based state machines (r2.0-2.3)
   #if ETHERNET_COM == 0
+    const byte nSerialChannels = 7; 
+    const byte maxSerialEvents = 105;
+  #else
     const byte nSerialChannels = 6; 
     const byte maxSerialEvents = 90;
-  #else
-    const byte nSerialChannels = 5; 
-    const byte maxSerialEvents = 75;
   #endif
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
   byte hardwareRevisionArray[5] = {25,26,27,28,29};
 #elif MACHINE_TYPE == 4  // Teensy 4.1 based state machines (r2+ v1.0)
-  const byte nSerialChannels = 4; 
-  const byte maxSerialEvents = 60;
+  const byte nSerialChannels = 5; 
+  const byte maxSerialEvents = 75;
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
   byte hardwareRevisionArray[5] = {27,28,29,30,31};
@@ -369,7 +369,7 @@ byte SyncState = 0; // State of the sync line (0 = low, 1 = high)
 boolean smaTransmissionConfirmed = false; // Set to true when the last state machine was successfully received, set to false when starting a transmission
 boolean newSMATransmissionStarted = false; // Set to true when beginning a state machine transmission
 boolean UARTrelayMode[nSerialChannels] = {false};
-byte nModuleEvents[nSerialChannels] = {10}; // Stores number of behavior events assigned to each serial module (10 by default)
+byte nModuleEvents[nSerialChannels] = {0}; // Stores number of behavior events assigned to each serial module (15 by default)
 uint16_t stateMatrixNBytes = 0; // Number of bytes in the state matrix about to be transmitted
 boolean using255BackSignal = 0; // If enabled, only 254 states can be used and going to "state 255" returns system to the previous state
 
@@ -477,8 +477,8 @@ unsigned long StateTimers[MaxStates+1] = {0}; // Timers for each state
 unsigned long StartTime = 0; // System Start Time
 uint64_t MatrixStartTimeMicros = 0; // Start time of state matrix (in us)
 uint64_t MatrixEndTimeMicros = 0; // End time of state matrix (in us)
-uint32_t currentTimeMicros = 0; // Current time (for detecting 32-bit clock rollovers)
-uint32_t lastTimeMicros = 0; // Last time read (for detecting  32-bit clock rollovers)
+volatile uint32_t currentTimeMicros = 0; // Current time (for detecting 32-bit clock rollovers)
+volatile uint32_t lastTimeMicros = 0; // Last time read (for detecting  32-bit clock rollovers)
 unsigned long nCyclesCompleted= 0; // Number of HW timer cycles since state matrix started
 unsigned long StateStartTime = 0; // Session Start Time
 unsigned long NextLEDBrightnessAdjustTime = 0; // Used to fade blue light when disconnected
@@ -559,6 +559,7 @@ union {
 
 #if MACHINE_TYPE > 2
   IntervalTimer hardwareTimer;
+  elapsedMicros teensyMicros;
 #endif
 
 
@@ -769,7 +770,6 @@ void setup() {
     pinMode(hardwareRevisionArray[i], INPUT);
   }
   hardwareRevision = 31-hardwareRevision;
-  
   CurrentEventBuffer[0] = 1;
   updateStatusLED(0); // Begin the blue light display ("Disconnected" state)
   #if MACHINE_TYPE < 3
@@ -800,6 +800,13 @@ void loop() {
       }
     }
   #endif
+  #if MACHINE_TYPE < 3
+    currentTimeMicros = micros();
+    if (currentTimeMicros < lastTimeMicros) {
+      nMicrosRollovers++;
+    }
+    lastTimeMicros = currentTimeMicros;
+  #endif
   if (startFlag == true) {
      startSM();
      startFlag = false;
@@ -807,11 +814,13 @@ void loop() {
 }
 
 void handler() { // This is the timer handler function, which is called every (timerPeriod) us
-  currentTimeMicros = micros();
-  if (currentTimeMicros < lastTimeMicros) {
-    nMicrosRollovers++;
-  }
-  lastTimeMicros = currentTimeMicros;
+  #if MACHINE_TYPE > 2
+    currentTimeMicros = teensyMicros;
+    if (currentTimeMicros < lastTimeMicros) {
+      nMicrosRollovers++;
+    }
+    lastTimeMicros = currentTimeMicros;
+  #endif
   if (connectionState == 0) { // If not connected to Bpod software
     if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte to any connected USB serial port
       #if ETHERNET_COM == 0
@@ -1470,6 +1479,12 @@ void handler() { // This is the timer handler function, which is called every (t
                 SoftEvent1 = 255;
               }
           break;
+          case 'Z':
+              if (SoftEvent2 < nModuleEvents[USBInputPos+1]) {
+                CurrentEvent[nCurrentEvents] = SoftEvent2 + Ev; nCurrentEvents++;
+                SoftEvent2 = 255;
+              }
+          break;
         }
         Ev += nModuleEvents[i];
       }
@@ -1869,56 +1884,52 @@ void setStateOutputs(byte State) {
   for (int i = 0; i < nOutputs; i++) {
       switch(OutputHW[i]) {
         case 'U':
-        thisMessage = OutputStateMatrix[State][i];
-        if (thisMessage > 0) {
-          nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
-          for (int i = 0; i < nMessageBytes; i++) {
-             serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
-          }
-          switch(thisChannel) {
-            case 0:
-              Module1.writeByteArray(serialByteBuffer, nMessageBytes);
-            break;
-            case 1:
-              Module2.writeByteArray(serialByteBuffer, nMessageBytes);
-            break;
-            #if MACHINE_TYPE > 1
-              case 2:
-                Module3.writeByteArray(serialByteBuffer, nMessageBytes);
+          thisMessage = OutputStateMatrix[State][i];
+          if (thisMessage > 0) {
+            nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
+            for (int i = 0; i < nMessageBytes; i++) {
+               serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
+            }
+            switch(thisChannel) {
+              case 0:
+                Module1.writeByteArray(serialByteBuffer, nMessageBytes);
               break;
-            #endif
-            #if MACHINE_TYPE == 3
-              case 3:
-                Module4.writeByteArray(serialByteBuffer, nMessageBytes);
+              case 1:
+                Module2.writeByteArray(serialByteBuffer, nMessageBytes);
               break;
-              #if ETHERNET_COM == 0
-                case 4:
-                  Module5.writeByteArray(serialByteBuffer, nMessageBytes);
+              #if MACHINE_TYPE > 1
+                case 2:
+                  Module3.writeByteArray(serialByteBuffer, nMessageBytes);
                 break;
               #endif
-            #endif
+              #if MACHINE_TYPE == 3
+                case 3:
+                  Module4.writeByteArray(serialByteBuffer, nMessageBytes);
+                break;
+                #if ETHERNET_COM == 0
+                  case 4:
+                    Module5.writeByteArray(serialByteBuffer, nMessageBytes);
+                  break;
+                #endif
+              #endif
+            }
           }
-        }
-        thisChannel++;
+          thisChannel++;
         break;
         case 'X':
           if (OutputStateMatrix[State][i] > 0) {
-            #if MACHINE_TYPE < 5
               serialByteBuffer[0] = 2; // Code for MATLAB to receive soft-code byte
               serialByteBuffer[1] = OutputStateMatrix[State][i]; // Soft code byte
               PC.writeByteArray(serialByteBuffer, 2);
-            #else
-//              thisMessage = OutputStateMatrix[State][i];
-//              if (thisMessage > 0) {
-//                nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
-//                serialByteBuffer[0] = nMessageBytes;
-//                for (int j = 0; j < nMessageBytes; j++) {
-//                   serialByteBuffer[j+1] = SerialMessageMatrix[thisMessage][thisChannel][j];
-//                }
-//                PC1.writeByteArray(serialByteBuffer, SerialMessageMaxBytes+1);
-//              }
-            #endif
           }
+          thisChannel++;
+        break;
+        case 'Z':
+          #if MACHINE_TYPE > 2
+            if (OutputStateMatrix[State][i] > 0) {
+              PC1.writeByte(OutputStateMatrix[State][i]);
+            }
+          #endif
           thisChannel++;
         break;
         case 'D':
@@ -2070,15 +2081,24 @@ void resetOutputs() {
 }
 
 uint64_t sessionTimeMicros() {
-   uint32_t currentTimeMicros = 0;
    uint64_t sessionTime = 0;
-   currentTimeMicros = micros();
+   #if MACHINE_TYPE > 2
+    currentTimeMicros = teensyMicros;
+   #else
+    currentTimeMicros = micros();
+   #endif
    sessionTime = ((uint64_t)currentTimeMicros + ((uint64_t)nMicrosRollovers*4294967295)) - sessionStartTimeMicros;
    return sessionTime;
 }
 
 void resetSessionClock() {
-    sessionStartTimeMicros = micros();
+    #if MACHINE_TYPE > 2
+      teensyMicros = 0;
+      lastTimeMicros = teensyMicros;
+      sessionStartTimeMicros = teensyMicros;
+    #else
+      sessionStartTimeMicros = micros();
+    #endif
     nMicrosRollovers = 0;
     #if MACHINE_TYPE == 4
       firstTrialFlag = true;
@@ -2214,7 +2234,14 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
       }
     break;
     case 'X':
-      // Todo: Send soft code to primary USB (currently not supported if message is more than 1 byte)
+      if (op == 1) {
+        thisMessage = GlobalTimerOnMessage[timerChan];
+      } else {
+        thisMessage = GlobalTimerOffMessage[timerChan];
+      }
+      serialByteBuffer[0] = 2; // Code for MATLAB to receive soft-code byte
+      serialByteBuffer[1] = thisMessage;
+      PC.writeByteArray(serialByteBuffer, 2);
     break;
     case 'Z':
       #if MACHINE_TYPE > 2
@@ -2223,11 +2250,7 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
         } else {
           thisMessage = GlobalTimerOffMessage[timerChan];
         }
-        nMessageBytes = SerialMessage_nBytes[thisMessage][thisChannel];
-        for (int i = 0; i < nMessageBytes; i++) {
-           serialByteBuffer[i] = SerialMessageMatrix[thisMessage][thisChannel][i];
-        }
-        PC1.writeByteArray(serialByteBuffer, nMessageBytes);
+        PC1.writeByte(thisMessage);
       #endif
     break;
     case 'B': // Digital IO (BNC, Wire, Digital, Valve-line)
