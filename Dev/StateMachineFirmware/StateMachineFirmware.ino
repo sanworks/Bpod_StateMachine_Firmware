@@ -75,7 +75,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 4 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 5 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -363,8 +363,9 @@ byte SyncChannel = 255; // 255 if no sync codes, <255 to specify a channel to us
 boolean syncOn = false; // If true, sync codes are sent on sync channel
 byte SyncChannelHW = 0; // Stores physical pin for sync channel
 byte NewSyncChannel = 0; // New digital output channel to use for Sync. (old channel gets reset to its original hardware type)
-byte SyncMode = 0; // 0 if low > high on trial start and high < low on trial end, 1 if line toggles with each state change
+byte SyncMode = 0; // 0 if low > high on trial start and high < low on trial end, 1 if line toggles with each state change, 2 if line toggles at 10Hz from trial start to trial end
 byte SyncState = 0; // State of the sync line (0 = low, 1 = high)
+uint32_t SyncTimer = 0; // Number of cycles since last sync state toggle (for mode 2)
 // Others
 boolean smaTransmissionConfirmed = false; // Set to true when the last state machine was successfully received, set to false when starting a transmission
 boolean newSMATransmissionStarted = false; // Set to true when beginning a state machine transmission
@@ -1305,7 +1306,8 @@ void handler() { // This is the timer handler function, which is called every (t
       MatrixStartTimeMicros = sessionTimeMicros(); 
       timeBuffer.uint64[0] = MatrixStartTimeMicros;
       PC.writeByteArray(timeBuffer.byteArray,8); // Send trial-start timestamp (from micros() clock)
-      SyncWrite();
+      SyncWrite(); 
+      SyncTimer = 0;
       setStateOutputs(CurrentState); // Adjust outputs, global timers, serial codes and sync port for first state
       #if MACHINE_TYPE == 4
         updateFlexOutputs();
@@ -1316,7 +1318,8 @@ void handler() { // This is the timer handler function, which is called every (t
       #endif
       firstTrialFlag = false;
     } else {
-      CurrentTime++;
+      CurrentTime++; 
+      SyncTimer++;
       for (int i = BNCInputPos; i < nInputs; i++) {
         if (inputEnabled[i] && !inputOverrideState[i]) {
           inputState[i] = digitalReadDirect(InputCh[i]); 
@@ -1654,6 +1657,12 @@ void handler() { // This is the timer handler function, which is called every (t
             CurrentState = NewState;
           }
           setStateOutputs(CurrentState);
+        }
+      }
+      if (SyncMode == 2) {
+        if (SyncTimer == 1000) {
+          SyncWrite();
+          SyncTimer = 0;
         }
       }
       updateFlexOutputs(); // If setStateOutputs or global timer linked channels set FlexOutput update flags, the latest values are written
