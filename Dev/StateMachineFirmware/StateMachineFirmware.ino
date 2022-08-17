@@ -75,7 +75,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 5 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 6 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -197,7 +197,7 @@ const byte nOutputs = sizeof(OutputHW);
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
   const int SerialBaudRate = 115200; // Transfer speed of hardware serial (Module) ports
-  byte hardwareRevisionArray[5] = {25,26,27,28,29};
+  byte hardwareRevisionArray[5] = {44,45,46,47,48};
 #elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
   const byte nSerialChannels = 4; 
   const byte maxSerialEvents = 60;
@@ -820,12 +820,18 @@ void handler() { // This is the timer handler function, which is called every (t
     if (currentTimeMicros < lastTimeMicros) {
       nMicrosRollovers++;
     }
-    lastTimeMicros = currentTimeMicros;
+    lastTimeMicros = currentTimeMicros; 
   #endif
   if (connectionState == 0) { // If not connected to Bpod software
     if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte to any connected USB serial port
       #if ETHERNET_COM == 0
-        PC.writeByte(discoveryByte);
+        #if MACHINE_TYPE > 2
+          PC.writeByte(discoveryByte);
+        #else
+          if (SerialUSB.dtr()) {
+            PC.writeByte(discoveryByte);
+          }
+        #endif
       #endif
       DiscoveryByteTime = millis();
     }
@@ -1252,8 +1258,10 @@ void handler() { // This is the timer handler function, which is called every (t
               nSMBytesRead = 0;
               smaPending = true;
             #elif MACHINE_TYPE < 4
-              PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
-              smaTransmissionConfirmed = true;
+              #if MACHINE_TYPE > 1
+                PC.readByteArray(StateMatrixBuffer, stateMatrixNBytes); // Read data in 1 batch operation (much faster than item-wise)
+                smaTransmissionConfirmed = true;
+              #endif
               loadStateMatrix(); // Loads the state matrix from the buffer into the relevant variables
               if (RunStateMatrixASAP) {
                 RunStateMatrixASAP = false;
@@ -2856,7 +2864,12 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
       PC.readByteArray(ConditionChannels, nConditionsUsed); // Get condition channels
       PC.readByteArray(ConditionValues, nConditionsUsed); // Get condition values
     }
-    PC.readByteArray(smGlobalCounterReset, nStates);
+    nOverrides = PC.readByte();
+    for (int y = 0; y<nOverrides; y++) {
+      col = PC.readByte();
+      val = PC.readByte();
+      smGlobalCounterReset[col] = val;
+    }     
     #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
         PC.readByteArray(smGlobalTimerTrig, nStates);
         PC.readByteArray(smGlobalTimerCancel, nStates);
@@ -2879,6 +2892,30 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     }
     if (nGlobalCountersUsed > 0) {
       PC.readUint32Array(GlobalCounterThresholds, nGlobalCountersUsed); // Get global counter event count thresholds
+    }
+    byte containsAdditionalOps = PC.readByte();
+    boolean clearedSerialMessageLibrary = false;
+    while (containsAdditionalOps) {
+      byte thisOp = PC.readByte();
+      switch (thisOp) {
+        case 'L': // Load serial message library for one module
+          if (!clearedSerialMessageLibrary) {
+            resetSerialMessages();
+            clearedSerialMessageLibrary = true;
+          }
+          Byte1 = PC.readByte();
+          Byte2 = PC.readByte();
+          for (int i = 0; i < Byte2; i++) {
+            Byte3 = PC.readByte(); // Message Index
+            Byte4 = PC.readByte(); // Message Length
+            SerialMessage_nBytes[Byte3][Byte1] = Byte4;
+            for (int j = 0; j < Byte4; j++) {
+              SerialMessageMatrix[Byte3][Byte1][j] = PC.readByte();
+            }
+          }
+        break;
+      }
+      containsAdditionalOps = PC.readByte();
     }
     smaTransmissionConfirmed = true;
   #endif
