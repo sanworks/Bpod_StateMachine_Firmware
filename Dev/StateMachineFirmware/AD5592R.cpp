@@ -25,10 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int SPI_speed = 20000000; // 20MHz can be used for ADC reads, clocking data from IC. 50MHz can be used for DAC and DO writes
 
 // Constructor
-AD5592R::AD5592R(byte ChipSelect) {
+AD5592R::AD5592R(byte ChipSelect, byte TheBusyPin) {
   CSPin = ChipSelect;
+  BusyPin = TheBusyPin;
   pinMode(CSPin, OUTPUT);
   digitalWrite(CSPin, HIGH);
+  pinMode(BusyPin, INPUT);
   SPI.begin(); // Initialize SPI interface
   
   // Reset the AD5592R
@@ -48,9 +50,15 @@ AD5592R::AD5592R(byte ChipSelect) {
 
   // Set all pins as DAC outputs
   registerBuffer.uint8[1] = B00101000;
-  registerBuffer.uint8[0] = B11111111;
+  registerBuffer.uint8[0] = B01111111;
   writeRegister();
-  isDAC = B11111111;
+  isDAC = B01111111;
+
+  // Set pin 7 to act as ADC busy pin
+  isDO = B10000000;
+  registerBuffer.uint8[1] = B01000001;
+  registerBuffer.uint8[0] = isDO;
+  writeRegister();
 }
 
 void AD5592R::setDO(byte channel, byte value) {
@@ -99,22 +107,31 @@ uint16_t AD5592R::getADC(byte channel) {
 }
 
 void AD5592R::readADC() {
-  registerBuffer.uint8[1] = B00010000;
+  uint32_t adcReadTotal[8] = {0};
+  registerBuffer.uint8[1] = B00010010;
   registerBuffer.uint8[0] = isADC;
   writeRegister(); // Request ADC sequence
   delayMicroseconds(1);
   registerBuffer.uint16[0] = 0; // NOP
   writeRegister(); // Dummy read (necessary to initialize conversion of first channel in sequence)
+  for (int j = 0; j < nReadsPerMeasurement; j++) {
+    for (int i = 0; i < 8; i++) {
+      if (bitRead(isADC,i)) {
+        delayMicroseconds(1);
+        while(1-digitalRead(BusyPin)){}
+        registerBuffer.uint16[0] = 0; // NOP
+        readRegister();
+        bitClear(registerBuffer.uint8[1], 7);
+        bitClear(registerBuffer.uint8[1], 6);
+        bitClear(registerBuffer.uint8[1], 5);
+        bitClear(registerBuffer.uint8[1], 4);
+        adcReadTotal[i] += registerBuffer.uint16[0];
+      }
+    }
+  }
   for (int i = 0; i < 8; i++) {
     if (bitRead(isADC,i)) {
-      delayMicroseconds(2); // Busy signal line may be used to reduce this delay. Actual time to stall here is ~2us - previous SPI write time
-      registerBuffer.uint16[0] = 0; // NOP
-      readRegister();
-      bitClear(registerBuffer.uint8[1], 7);
-      bitClear(registerBuffer.uint8[1], 6);
-      bitClear(registerBuffer.uint8[1], 5);
-      bitClear(registerBuffer.uint8[1], 4);
-      adcReadout[i] = registerBuffer.uint16[0];
+      adcReadout[i] = adcReadTotal[i]/nReadsPerMeasurement;
     }
   }
 }
@@ -156,7 +173,7 @@ void AD5592R::updateChannelTypes() {
   writeRegister();
   writeRegister();
   // Set Digital outputs
-  registerBuffer.uint8[1] = B01000000;
+  registerBuffer.uint8[1] = B01000001;
   registerBuffer.uint8[0] = isDO;
   writeRegister();
   // Set ADC inputs

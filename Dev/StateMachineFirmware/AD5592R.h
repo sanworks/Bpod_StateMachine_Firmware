@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 class AD5592R{
   public:
-    AD5592R(byte ChipSelect); // Constructor
+    AD5592R(byte ChipSelect, byte BusyPin); // Constructor
     void writeDAC(byte channel, uint16_t value); // Convert to setDAC() for LDAC operation
     void setChannelType(byte channel, byte type);
     void updateChannelTypes();
@@ -35,6 +35,7 @@ class AD5592R{
     byte nDI = 0; // Number of digital inputs configured
     byte DOstate = 0; // Bits indicate logic levels written to channels configured as DO
     byte DIstate = 0; // Bits indicate logic levels read from channels configured as DI
+    byte nReadsPerMeasurement = 1; // Configure oversampling by setting nReadsPerMeasurement above 1
     void setDO(byte channel, byte value); // Sets logic of an output channel in DOstate. Must be written to the chip with a call to writeDO()
     void writeDO(); // Sets digital output channel logic to equal bits of DOstate
     boolean getDI(byte channel); // Returns logic state of a channel returned to DIstate from last call to readDI()
@@ -45,6 +46,7 @@ class AD5592R{
 
   private:
     byte CSPin;
+    byte BusyPin;
     byte isDAC = 0; // Bits indicate whether each output channel is configured as a DAC
     byte isADC = 0; // Bits indicate whether each output channel is configured as an ADC
     byte isDO = 0; // Bits indicate whether each output channel is configured as a TTL output

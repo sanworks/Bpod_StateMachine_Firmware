@@ -18,9 +18,9 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-// #######################################
-// # Bpod State Machine Firmware Ver. 23 #
-// #######################################
+// ##############################################
+// # Bpod Finite State Machine Firmware Ver. 23 #
+// ##############################################
 //
 // SYSTEM SETUP:
 //
@@ -28,15 +28,23 @@
 // change the PWM_FREQUENCY and TC_FREQUENCY constants to 50000 in the file /Arduino/hardware/arduino/sam/variants/arduino_due_x/variant.h
 // or in Windows, \Users\Username\AppData\Local\Arduino15\packages\arduino\hardware\sam\1.6.7\variants\arduino_due_x\variant.h
 //
-// **NOTE** previous versions of this firmware required dependencies and modifications to the Teensy core files. As of firmware v4, these are no longer necessary.
-// **NOTE** Requires Arduino 1.8.15 or newer, and Teensyduino 1.5.4
+// **NOTE** previous versions of this firmware required dependencies and modifications to the Teensy core files. As of firmware v23, these are no longer necessary.
+// **NOTE** Requires Arduino 1.8.19 or newer, and Teensyduino 1.57 or newer
 
 //////////////////////////////////////////
-// Set hardware series (0.5, 0.7+, etc)  /
+// Set hardware version (0.5, 1.0, etc)  /
 //////////////////////////////////////////
-// 1 = Bpod 0.5 (Arduino Due); 2 = Bpod 0.7-1.0 (Arduino Due); 3 = Bpod 2.0-2.4 (Teensy 3.6); 4 = Bpod 2+ r1.0
+// Machine Type: 1 = FSM 0.5 (Arduino Due); 2 = FSM 0.7-1.0 (Arduino Due); 3 = FSM 2.0-2.4 (Teensy 3.6) or FSM 2.5 (Teensy 4.1) 4 = FSM 2+ (Teensy 4.1)
+// Machine Build: All new machines are MACHINE_BUILD = 0. When a design revision changes the microcontroller pinout without changing the state machine I/O channels, Machine build is incremented.
+// Configure as follows:
+// FSM 0.5:     MACHINE_TYPE 1, MACHINE_BUILD 0
+// FSM 0.7-1.0: MACHINE_TYPE 2, MACHINE_BUILD 0
+// FSM 2.0-2.4: MACHINE_TYPE 3, MACHINE_BUILD 0
+// FSM 2.5:     MACHINE_TYPE 3, MACHINE_BUILD 1
+// FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
-#define MACHINE_TYPE 3 
+#define MACHINE_TYPE 3
+#define MACHINE_BUILD 0
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -75,7 +83,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 6 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 7 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -127,14 +135,30 @@
     ArCOM PC(SerialUSB);
     ArCOM PC1(SerialUSB1); 
   #else
-    ArCOMvE PC(Serial5); 
+    #if MACHINE_BUILD == 0
+      ArCOMvE PC(Serial5);
+      ArCOM PC1(SerialUSB1);  
+    #elif MACHINE_BUILD == 1
+      ArCOMvE PC(Serial8); 
+      ArCOM PC1(SerialUSB1); 
+    #endif
   #endif
   ArCOM Module1(Serial1);
-  ArCOM Module2(Serial3); 
-  ArCOM Module3(Serial2); 
-  ArCOM Module4(Serial4); 
+  #if MACHINE_BUILD == 0
+    ArCOM Module2(Serial3); 
+    ArCOM Module3(Serial2); 
+    ArCOM Module4(Serial4); 
+  #elif MACHINE_BUILD == 1
+    ArCOM Module2(Serial2); 
+    ArCOM Module3(Serial6); 
+    ArCOM Module4(Serial7);
+  #endif
   #if ETHERNET_COM == 0 
-    ArCOM Module5(Serial5); 
+    #if MACHINE_BUILD == 0
+      ArCOM Module5(Serial5); 
+    #elif MACHINE_BUILD == 1
+      ArCOM Module5(Serial8);
+    #endif
   #endif
 #elif MACHINE_TYPE == 4
   #if !defined(USB_TRIPLE_SERIAL)
@@ -170,17 +194,31 @@
     byte InputCh[] = {0,0,0,0,10,11,31,29,28,30,32,34,36,38,40,42};                                         
     byte OutputHW[] = {'U','U','U','X','B','B','W','W','W','P','P','P','P','P','P','P','P','V','V','V','V','V','V','V','V'};
     byte OutputCh[] = {0,0,0,0,25,24,43,41,39,9,8,7,6,5,4,3,2,22,22,22,22,22,22,22,22};  
-#elif MACHINE_TYPE == 3 // Bpod State Machine r2.0-2.3
+#elif MACHINE_TYPE == 3 // Bpod State Machine r2.0-2.5
   #if ETHERNET_COM == 0
-    byte InputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P'};
-    byte InputCh[] = {0,0,0,0,0,0,0,6,5,39,38,18,15};                                         
-    byte OutputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21};  
+    #if MACHINE_BUILD == 0
+      byte InputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P'};
+      byte InputCh[] = {0,0,0,0,0,0,0,6,5,39,38,18,15};                                         
+      byte OutputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+      byte OutputCh[] = {0,0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21};  
+    #elif MACHINE_BUILD == 1
+      byte InputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P'};
+      byte InputCh[] = {0,0,0,0,0,0,0,6,5,39,38,17,16};                                         
+      byte OutputHW[] = {'U','U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+      byte OutputCh[] = {0,0,0,0,0,0,0,4,3,37,14,15,18,23,22,20,21};  
+    #endif
   #else
-    byte InputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P'};
-    byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
-    byte OutputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
-    byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
+    #if MACHINE_BUILD == 0
+      byte InputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P'};
+      byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,18,15};                                         
+      byte OutputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+      byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,16,17,23,22,20,21}; 
+    #elif MACHINE_BUILD == 1
+      byte InputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P'};
+      byte InputCh[] = {0,0,0,0,0,0,6,5,39,38,17,16};                                         
+      byte OutputHW[] = {'U','U','U','U','X','Z','B','B','P','P','P','P','V','V','V','V'};
+      byte OutputCh[] = {0,0,0,0,0,0,4,3,37,14,15,18,23,22,20,21}; 
+    #endif
   #endif
 #elif MACHINE_TYPE == 4 // Bpod State Machine 2+ r1.0
     byte InputHW[] = {'U','U','U','X','Z','F','F','F','F','B','B','P','P','P','P','P'};
@@ -193,12 +231,14 @@
 const byte nInputs = sizeof(InputHW);
 const byte nOutputs = sizeof(OutputHW);
 #if MACHINE_TYPE == 1 // State machine (Bpod 0.5)
+  #define TEENSY_VERSION 0
   const byte nSerialChannels = 3; // Must match total of 'U', 'X' and 'Z' in InputHW (above)
   const byte maxSerialEvents = 30; // Must be a multiple of nSerialChannels
   const int MaxStates = 128;
   const int SerialBaudRate = 115200; // Transfer speed of hardware serial (Module) ports
   byte hardwareRevisionArray[5] = {44,45,46,47,48};
 #elif MACHINE_TYPE == 2 // Bpod State Machine r0.7+
+  #define TEENSY_VERSION 0
   const byte nSerialChannels = 4; 
   const byte maxSerialEvents = 60;
   const int MaxStates = 256;
@@ -214,8 +254,15 @@ const byte nOutputs = sizeof(OutputHW);
   #endif
   const int MaxStates = 256;
   const int SerialBaudRate = 1312500;
-  byte hardwareRevisionArray[5] = {25,26,27,28,29};
+  #if MACHINE_BUILD == 0
+    #define TEENSY_VERSION 3
+    byte hardwareRevisionArray[5] = {25,26,27,28,29};
+  #elif MACHINE_BUILD == 1
+    #define TEENSY_VERSION 4
+    byte hardwareRevisionArray[5] = {32,31,30,27,9};
+  #endif
 #elif MACHINE_TYPE == 4  // Teensy 4.1 based state machines (r2+ v1.0)
+  #define TEENSY_VERSION 4
   const byte nSerialChannels = 5; 
   const byte maxSerialEvents = 75;
   const int MaxStates = 256;
@@ -241,7 +288,7 @@ byte nConditionsUsed = MAX_CONDITIONS;
 // flexIO vars
 #if MACHINE_TYPE == 4
   const byte nFlexIO = 4;
-  AD5592R FlexIO(9); // Create FlexIO, an AD5592R object with CS on Teensy pin 9
+  AD5592R FlexIO(9, 32); // Create FlexIO, an AD5592R object with CS on Teensy pin 9 and BusyPin on Teensy pin 32
   volatile byte flexIOChannelType[nFlexIO] = {1,1,1,1}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC
   uint16_t flexIOValues[nFlexIO] = {0}; // Stores values read from or to be written to FlexIO channels
   boolean flexIO_updateDIflag = false; // Flags if updates are required for each channel type
@@ -277,11 +324,19 @@ byte nConditionsUsed = MAX_CONDITIONS;
   byte BlueLEDPin = 12;
   byte valveCSChannel = 22;
 #elif MACHINE_TYPE == 3
-  byte GreenLEDPin = 2;
-  byte RedLEDPin = 36;
-  byte BlueLEDPin = 35;
-  byte ValveEnablePin = 19;
-  byte valveCSChannel = 0;
+  #if MACHINE_BUILD == 0
+    byte GreenLEDPin = 2;
+    byte RedLEDPin = 36;
+    byte BlueLEDPin = 35;
+    byte ValveEnablePin = 19;
+    byte valveCSChannel = 0;
+  #else
+    byte GreenLEDPin = 2;
+    byte RedLEDPin = 36;
+    byte BlueLEDPin = 33;
+    byte ValveEnablePin = 19;
+    byte valveCSChannel = 0;
+  #endif
 #elif MACHINE_TYPE == 4
   byte GreenLEDPin = 35;
   byte RedLEDPin = 2;
@@ -645,6 +700,7 @@ void setup() {
   
   SPI.begin();
   #if MACHINE_TYPE == 4
+    FlexIO.nReadsPerMeasurement = 3; // Configure 3x oversampling for analog inputs by default
     setFlexIOChannelTypes();
     memory_begin = (uint32_t *)(0x70000000); // PSRAM start address
     memory_end = (uint32_t *)(0x70000000 + external_psram_size * 1048576); // PSRAM end address
@@ -691,11 +747,18 @@ void setup() {
                 Serial2.addMemoryForRead(HWSerialBuf2, 192);
               #endif
             break;
-            #if MACHINE_TYPE == 2 || MACHINE_TYPE == 3
+            #if MACHINE_TYPE == 2 
                 case 2:
                   Serial3.begin(SerialBaudRate); Byte1++;
-                  #if MACHINE_TYPE > 2
+                break;
+            #elif MACHINE_TYPE == 3
+                case 2:
+                  #if MACHINE_BUILD == 0
+                    Serial3.begin(SerialBaudRate); Byte1++;
                     Serial3.addMemoryForRead(HWSerialBuf3, 192);
+                  #elif MACHINE_BUILD == 1
+                    Serial6.begin(SerialBaudRate); Byte1++;
+                    Serial6.addMemoryForRead(HWSerialBuf3, 192);
                   #endif
                 break;
             #elif MACHINE_TYPE == 4
@@ -706,13 +769,23 @@ void setup() {
             #endif  
             #if MACHINE_TYPE == 3
               case 3:
-                Serial4.begin(SerialBaudRate); Byte1++;
-                Serial4.addMemoryForRead(HWSerialBuf4, 192);
+                #if MACHINE_BUILD == 0
+                  Serial4.begin(SerialBaudRate); Byte1++;
+                  Serial4.addMemoryForRead(HWSerialBuf4, 192);
+                #elif MACHINE_BUILD == 1
+                  Serial7.begin(SerialBaudRate); Byte1++;
+                  Serial7.addMemoryForRead(HWSerialBuf4, 192);
+                #endif
               break;
               #if ETHERNET_COM == 0
                 case 4:
-                  Serial5.begin(SerialBaudRate); Byte1++;
-                  Serial5.addMemoryForRead(HWSerialBuf5, 192);
+                  #if MACHINE_BUILD == 0
+                    Serial5.begin(SerialBaudRate); Byte1++;
+                    Serial5.addMemoryForRead(HWSerialBuf5, 192);
+                  #elif MACHINE_BUILD == 1
+                    Serial8.begin(SerialBaudRate); Byte1++;
+                    Serial8.addMemoryForRead(HWSerialBuf5, 192);
+                  #endif
                 break;
               #endif
             #endif
@@ -743,7 +816,12 @@ void setup() {
   }
   // Start UART --> Ethernet
   #if ETHERNET_COM == 1 && MACHINE_TYPE == 3
-     Serial5.begin(2625000);
+     #if MACHINE_BUILD == 0
+      Serial5.begin(2625000);
+     #elif MACHINE_BUILD == 1
+      Serial8.begin(2625000);
+     #endif
+     
   #endif  
   Byte1 = 0;
   pinMode(RedLEDPin, OUTPUT);
@@ -1032,14 +1110,19 @@ void handler() { // This is the timer handler function, which is called every (t
           PC.writeByteArray(flexIOChannelType,nFlexIO);
         #endif
       break;
-      case '^': // Set FlexIO analog input sampling rate
-        #if MACHINE_TYPE == 4
-          flexIO_ADC_Sample_Interval = PC.readUint32();
-          flexIO_ADC_Sample_Clock = 0;
-          PC.writeByte(1);
-        #endif
-      break;
       #if MACHINE_TYPE == 4
+        case '^': // Set FlexIO analog input sampling rate
+            flexIO_ADC_Sample_Interval = PC.readUint32();
+            flexIO_ADC_Sample_Clock = 0;
+            PC.writeByte(1);
+        break;
+        case 'o': // Set FlexIO oversampling nSamples
+          FlexIO.nReadsPerMeasurement = PC.readByte();
+          PC.writeByte(1);
+        break;
+        case '.': // Return FlexIO oversampling nSamples
+          PC.writeByte(FlexIO.nReadsPerMeasurement);
+        break;
         case 't': // Set analog threshold value
           PC.readUint16Array(analogThreshold1, nFlexIO);
           PC.readUint16Array(analogThreshold2, nFlexIO);
@@ -1254,7 +1337,7 @@ void handler() { // This is the timer handler function, which is called every (t
               PC.writeByte(0);
             #endif
           } else {
-            #if MACHINE_TYPE == 4
+            #if TEENSY_VERSION == 4
               nSMBytesRead = 0;
               smaPending = true;
             #elif MACHINE_TYPE < 4
@@ -1334,13 +1417,15 @@ void handler() { // This is the timer handler function, which is called every (t
         } 
       }
       #if MACHINE_TYPE == 4 
-        FlexIO.readDI();
-        for (int i = 0; i < nFlexIO; i++) {
-          if (flexIOChannelType[i] == 0) {
-            if (inputEnabled[i+FlexInputPos] && !inputOverrideState[i+FlexInputPos]) {
-              inputState[i+FlexInputPos] = FlexIO.getDI(i);
-            }
-          } 
+        if (FlexIO.nDI > 0) {
+          FlexIO.readDI();
+          for (int i = 0; i < nFlexIO; i++) {
+            if (flexIOChannelType[i] == 0) {
+              if (inputEnabled[i+FlexInputPos] && !inputOverrideState[i+FlexInputPos]) {
+                inputState[i+FlexInputPos] = FlexIO.getDI(i);
+              }
+            } 
+          }
         }
       #endif
       
