@@ -33,6 +33,7 @@ class AD5592R{
     byte nADC = 0; // Number of ADC channels configured
     byte nDO = 0; // Number of digital outputs configured
     byte nDI = 0; // Number of digital inputs configured
+    byte nHighZ = 0; // Number of Tri-State (High-Z) channels configured
     byte DOstate = 0; // Bits indicate logic levels written to channels configured as DO
     byte DIstate = 0; // Bits indicate logic levels read from channels configured as DI
     byte nReadsPerMeasurement = 1; // Configure oversampling by setting nReadsPerMeasurement above 1
@@ -47,10 +48,11 @@ class AD5592R{
   private:
     byte CSPin;
     byte BusyPin;
-    byte isDAC = 0; // Bits indicate whether each output channel is configured as a DAC
-    byte isADC = 0; // Bits indicate whether each output channel is configured as an ADC
-    byte isDO = 0; // Bits indicate whether each output channel is configured as a TTL output
-    byte isDI = 0; // Bits indicate whether each output channel is configured as a TTL input
+    byte isDAC = 0; // Bits indicate whether each I/O channel is configured as a DAC
+    byte isADC = 0; // Bits indicate whether each I/O channel is configured as an ADC
+    byte isDO = 0; // Bits indicate whether each I/O channel is configured as a TTL output
+    byte isDI = 0; // Bits indicate whether each I/O channel is configured as a TTL input
+    byte isHighZ = 0; // Bits indicate whether each I/O channel is configured as Tri-State (High Z)
     union {
       uint8_t uint8[2];
       uint16_t uint16[1];

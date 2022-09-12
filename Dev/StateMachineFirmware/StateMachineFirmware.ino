@@ -44,7 +44,7 @@
 // FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
 #define MACHINE_TYPE 3
-#define MACHINE_BUILD 0
+#define MACHINE_BUILD 1
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -83,7 +83,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 7 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 8 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -289,7 +289,7 @@ byte nConditionsUsed = MAX_CONDITIONS;
 #if MACHINE_TYPE == 4
   const byte nFlexIO = 4;
   AD5592R FlexIO(9, 32); // Create FlexIO, an AD5592R object with CS on Teensy pin 9 and BusyPin on Teensy pin 32
-  volatile byte flexIOChannelType[nFlexIO] = {1,1,1,1}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC
+  volatile byte flexIOChannelType[nFlexIO] = {4,4,4,4}; // Set defaults similar to wire terminals on r0.5-1.0. Channel types are: 0 = DI, 1 = DO, 2 = ADC, 3 = DAC, 4 = Tri-State
   uint16_t flexIOValues[nFlexIO] = {0}; // Stores values read from or to be written to FlexIO channels
   boolean flexIO_updateDIflag = false; // Flags if updates are required for each channel type
   boolean flexIO_updateDOflag = false;

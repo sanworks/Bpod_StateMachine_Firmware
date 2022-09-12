@@ -48,11 +48,11 @@ AD5592R::AD5592R(byte ChipSelect, byte TheBusyPin) {
   registerBuffer.uint8[0] = B00110000;
   writeRegister();
 
-  // Set all pins as DAC outputs
-  registerBuffer.uint8[1] = B00101000;
+  // Set all pins as High Z (Tri-State)
+  registerBuffer.uint8[1] = B01101000;
   registerBuffer.uint8[0] = B01111111;
   writeRegister();
-  isDAC = B01111111;
+  isHighZ = B01111111;
 
   // Set pin 7 to act as ADC busy pin
   isDO = B10000000;
@@ -111,14 +111,14 @@ void AD5592R::readADC() {
   registerBuffer.uint8[1] = B00010010;
   registerBuffer.uint8[0] = isADC;
   writeRegister(); // Request ADC sequence
-  delayMicroseconds(1);
+  delayMicroseconds(2);
   registerBuffer.uint16[0] = 0; // NOP
   writeRegister(); // Dummy read (necessary to initialize conversion of first channel in sequence)
   for (int j = 0; j < nReadsPerMeasurement; j++) {
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 7; i++) {
       if (bitRead(isADC,i)) {
-        delayMicroseconds(1);
         while(1-digitalRead(BusyPin)){}
+        delayMicroseconds(1);
         registerBuffer.uint16[0] = 0; // NOP
         readRegister();
         bitClear(registerBuffer.uint8[1], 7);
@@ -129,39 +129,54 @@ void AD5592R::readADC() {
       }
     }
   }
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 7; i++) {
     if (bitRead(isADC,i)) {
       adcReadout[i] = adcReadTotal[i]/nReadsPerMeasurement;
     }
   }
+  registerBuffer.uint8[1] = B00010010;
+  registerBuffer.uint8[0] = 0;
+  writeRegister(); // End ADC sequence
+  //delayMicroseconds(1);
 }
 
 void AD5592R::setChannelType(byte channel, byte type) { 
-  // Sets channel type: 0 = DI, 1 = DO, 2 = AI, 3 = AO. Must be followed with a call to updateChannelTypes() to write the channel config to the AD5592R
+  // Sets channel type: 0 = DI, 1 = DO, 2 = AI, 3 = AO, 4 = TriState (High-Z). Must be followed with a call to updateChannelTypes() to write the channel config to the AD5592R
   switch(type) {
     case 0: // Digital input
       bitClear(isADC, channel);
       bitClear(isDAC, channel);
       bitClear(isDO, channel);
+      bitClear(isHighZ, channel);
       bitSet(isDI,channel);
     break;
     case 1: // Digital output
       bitClear(isADC, channel);
       bitClear(isDAC, channel);
       bitClear(isDI, channel);
+      bitClear(isHighZ, channel);
       bitSet(isDO,channel);
     break;
     case 2: // Analog input
       bitClear(isDAC, channel);
       bitClear(isDO, channel);
       bitClear(isDI, channel);
+      bitClear(isHighZ, channel);
       bitSet(isADC,channel);
     break;
     case 3: // Analog output
       bitClear(isADC, channel);
       bitClear(isDO, channel);
       bitClear(isDI, channel);
+      bitClear(isHighZ, channel);
       bitSet(isDAC,channel);
+    break;
+    case 4: // High-Z (Tri-State)
+      bitClear(isADC, channel);
+      bitClear(isDO, channel);
+      bitClear(isDI, channel);
+      bitClear(isDAC,channel);
+      bitSet(isHighZ,channel);
     break;
   }
 }
@@ -184,9 +199,13 @@ void AD5592R::updateChannelTypes() {
   registerBuffer.uint8[1] = B00101000;
   registerBuffer.uint8[0] = isDAC;
   writeRegister();
-  nDAC = 0; nADC = 0; nDO = 0; nDI = 0;
+  // Set High-Z channels
+  registerBuffer.uint8[1] = B01101000;
+  registerBuffer.uint8[0] = isHighZ;
+  writeRegister();
+  nDAC = 0; nADC = 0; nDO = 0; nDI = 0; nHighZ = 0;
   
-  for (int i = 0; i < 8; i++) { // Update channel counts
+  for (int i = 0; i < 7; i++) { // Update channel counts
     if (bitRead(isADC,i)) {
       nADC++;
     }
@@ -198,6 +217,9 @@ void AD5592R::updateChannelTypes() {
     }
     if (bitRead(isDI,i)) {
       nDI++;
+    }
+    if (bitRead(isHighZ,i)) {
+      nHighZ++;
     }
   }
 }
