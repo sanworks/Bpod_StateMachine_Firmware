@@ -83,7 +83,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 8 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 9 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /
@@ -814,6 +814,7 @@ void setup() {
       break;
     }
   }
+  
   // Start UART --> Ethernet
   #if ETHERNET_COM == 1 && MACHINE_TYPE == 3
      #if MACHINE_BUILD == 0
@@ -1388,8 +1389,16 @@ void handler() { // This is the timer handler function, which is called every (t
   if (RunningStateMatrix) {
     if (firstLoop == 1) { 
       firstLoop = 0;
-      #if MACHINE_TYPE > 2
-        delayMicroseconds(5); // Delay so that the i/o + timing matches subsequent loops (which include ~5us of processing first)
+      #if MACHINE_TYPE == 4
+        if (!flexIO_updateAIflag) {
+          delayMicroseconds(1); // Delay so that the i/o + timing matches subsequent loops (which include ~1us of processing first)
+        }
+      #elif MACHINE_TYPE == 3
+        #if MACHINE_BUILD == 0
+          delayMicroseconds(5); // Delay so that the i/o + timing matches subsequent loops (which include ~5us of processing first)
+        #else
+          delayMicroseconds(1);
+        #endif
       #else
         delayMicroseconds(25); // Delay so that the i/o + timing matches subsequent loops (which include ~25us of processing first)
       #endif
@@ -2598,17 +2607,14 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     nConditionsUsed = PC.readByte();
   #endif
   bufferPos = 4; // Current position in serial relay buffer
-  for (int x = 0; x < nStates; x++) { // Set matrix to default
-    StateTimerMatrix[x] = 0;
-    for (int y = 0; y < InputMatrixSize; y++) {
-      InputStateMatrix[x][y] = x;
-    }
-    for (int y = 0; y < OutputMatrixSize; y++) {
-      OutputStateMatrix[x][y] = 0;
-    }
-    smGlobalTimerTrig[x] = 0;
-    smGlobalTimerCancel[x] = 0;
-    smGlobalCounterReset[x] = 0;
+  memset(smGlobalTimerTrig, 0, sizeof(smGlobalTimerTrig[0]) * nStates);
+  memset(smGlobalTimerCancel, 0, sizeof(smGlobalTimerCancel[0]) * nStates);
+  memset(smGlobalCounterReset, 0, sizeof(smGlobalCounterReset[0]) * nStates);
+  memset(StateTimerMatrix, 0, sizeof(StateTimerMatrix[0]) * nStates);
+  memset(OutputStateMatrix, 0, sizeof(OutputStateMatrix[0][0]) * OutputMatrixSize * nStates);
+  for (byte x = 0; x < nStates; x++) { // Reset matrix to default
+    memset(&InputStateMatrix[x], x, InputMatrixSize*sizeof(InputStateMatrix[0][0]));
+//    For some reason loops are faster than memset if nBytes to set is smaller than some threshold
     for (int y = 0; y < MAX_GLOBAL_TIMERS; y++) {
       GlobalTimerStartMatrix[x][y] = x;
     }
@@ -2623,9 +2629,8 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
     }
   }
   #if MACHINE_TYPE > 1 // Bpod 0.7+; Read state matrix from RAM buffer
-    for (int x = 0; x < nStates; x++) { // Get State timer matrix
-      StateTimerMatrix[x] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
+    memcpy(StateTimerMatrix, &StateMatrixBuffer[bufferPos], nStates*sizeof(StateTimerMatrix[0]));
+    bufferPos += sizeof(StateTimerMatrix[0])*nStates;
     for (int x = 0; x < nStates; x++) { // Get Input Matrix differences
       nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
       for (int y = 0; y<nOverrides; y++) {
@@ -2697,47 +2702,34 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
         }
       }
     }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      GlobalTimerChannel[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
-    #if MACHINE_TYPE == 4 // Global timer on/off messages are 16-bit for state machine 2+
+
+    if (nGlobalTimersUsed > 0) {
+      memcpy(GlobalTimerChannel, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerChannel[0]));
+      bufferPos += sizeof(GlobalTimerChannel[0])*nGlobalTimersUsed;
+      memcpy(GlobalTimerOnMessage, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerOnMessage[0]));
+      bufferPos += sizeof(GlobalTimerOnMessage[0])*nGlobalTimersUsed;
+      memcpy(GlobalTimerOffMessage, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerOffMessage[0]));
+      bufferPos += sizeof(GlobalTimerOffMessage[0])*nGlobalTimersUsed;
       for (int i = 0; i < nGlobalTimersUsed; i++) {
-        typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        GlobalTimerOnMessage[i] = typeBuffer.uint16;
+        GlobalTimerLoop[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+        if (GlobalTimerLoop[i] > 1) {
+          GTUsingLoopCounter[i] = true;
+        } else {
+          GTUsingLoopCounter[i] = false;
+        }
       }
-      for (int i = 0; i < nGlobalTimersUsed; i++) {
-        typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        GlobalTimerOffMessage[i] = typeBuffer.uint16;
-      }
-    #else
-      for (int i = 0; i < nGlobalTimersUsed; i++) {
-        GlobalTimerOnMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      }
-      for (int i = 0; i < nGlobalTimersUsed; i++) {
-        GlobalTimerOffMessage[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      }
-    #endif    
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      GlobalTimerLoop[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      if (GlobalTimerLoop[i] > 1) {
-        GTUsingLoopCounter[i] = true;
-      } else {
-        GTUsingLoopCounter[i] = false;
-      }
+      memcpy(SendGlobalTimerEvents, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(SendGlobalTimerEvents[0]));
+      bufferPos += sizeof(SendGlobalTimerEvents[0])*nGlobalTimersUsed;
     }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      SendGlobalTimerEvents[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+    if (nGlobalCountersUsed > 0) {
+      memcpy(GlobalCounterAttachedEvents, &StateMatrixBuffer[bufferPos], nGlobalCountersUsed*sizeof(GlobalCounterAttachedEvents[0]));
+      bufferPos += sizeof(GlobalCounterAttachedEvents[0])*nGlobalCountersUsed;
     }
-    for (int i = 0; i < nGlobalCountersUsed; i++) {
-      GlobalCounterAttachedEvents[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
-    for (int i = 0; i < nConditionsUsed; i++) {
-      ConditionChannels[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-    }
-    for (int i = 0; i < nConditionsUsed; i++) {
-      ConditionValues[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
+    if (nConditionsUsed > 0) {
+      memcpy(ConditionChannels, &StateMatrixBuffer[bufferPos], nConditionsUsed*sizeof(ConditionChannels[0]));
+      bufferPos += sizeof(ConditionChannels[0])*nConditionsUsed;
+      memcpy(ConditionValues, &StateMatrixBuffer[bufferPos], nConditionsUsed*sizeof(ConditionValues[0]));
+      bufferPos += sizeof(ConditionValues[0])*nConditionsUsed;
     }
     nOverrides = StateMatrixBuffer[bufferPos]; bufferPos++;
     for (int i = 0; i < nOverrides; i++) {
@@ -2759,89 +2751,25 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
         analogThreshDisable[col] = val;
       }
     #endif
-    #if GLOBALTIMER_TRIG_BYTEWIDTH == 1
-        for (int i = 0; i < nStates; i++) {
-          smGlobalTimerTrig[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        }
-        for (int i = 0; i < nStates; i++) {
-          smGlobalTimerCancel[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        }
-        for (int i = 0; i < nGlobalTimersUsed; i++) {
-          GlobalTimerOnsetTriggers[i] = StateMatrixBuffer[bufferPos]; bufferPos++;
-        }
-    #elif GLOBALTIMER_TRIG_BYTEWIDTH == 2
-        for (int i = 0; i < nStates; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          smGlobalTimerTrig[i] = typeBuffer.uint16;
-        }
-        for (int i = 0; i < nStates; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          smGlobalTimerCancel[i] = typeBuffer.uint16;
-        }
-        for (int i = 0; i < nGlobalTimersUsed; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          GlobalTimerOnsetTriggers[i] = typeBuffer.uint16;
-        }
-     #elif GLOBALTIMER_TRIG_BYTEWIDTH == 4
-        for (int i = 0; i < nStates; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          smGlobalTimerTrig[i] = typeBuffer.uint32;
-        }
-        for (int i = 0; i < nStates; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          smGlobalTimerCancel[i] = typeBuffer.uint32;
-        }
-        for (int i = 0; i < nGlobalTimersUsed; i++) {
-          typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-          GlobalTimerOnsetTriggers[i] = typeBuffer.uint32;
-        }
-    #endif
-    for (int i = 0; i < nStates; i++) {
-      typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      StateTimers[i] = typeBuffer.uint32;
+    memcpy(smGlobalTimerTrig, &StateMatrixBuffer[bufferPos], nStates*sizeof(smGlobalTimerTrig[0]));
+    bufferPos += sizeof(smGlobalTimerTrig[0])*nStates;
+    memcpy(smGlobalTimerCancel, &StateMatrixBuffer[bufferPos], nStates*sizeof(smGlobalTimerCancel[0]));
+    bufferPos += sizeof(smGlobalTimerCancel[0])*nStates;
+    memcpy(GlobalTimerOnsetTriggers, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerOnsetTriggers[0]));
+    bufferPos += sizeof(GlobalTimerOnsetTriggers[0])*nGlobalTimersUsed;
+    memcpy(StateTimers, &StateMatrixBuffer[bufferPos], nStates*sizeof(StateTimers[0]));
+    bufferPos += 4*nStates;
+    if (nGlobalTimersUsed > 0) {
+      memcpy(GlobalTimers, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimers[0]));
+      bufferPos += 4*nGlobalTimersUsed;
+      memcpy(GlobalTimerOnsetDelays, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerOnsetDelays[0]));
+      bufferPos += 4*nGlobalTimersUsed;
+      memcpy(GlobalTimerLoopIntervals, &StateMatrixBuffer[bufferPos], nGlobalTimersUsed*sizeof(GlobalTimerLoopIntervals[0]));
+      bufferPos += 4*nGlobalTimersUsed;
     }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      GlobalTimers[i] = typeBuffer.uint32;
-    }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      GlobalTimerOnsetDelays[i] = typeBuffer.uint32;
-    }
-    for (int i = 0; i < nGlobalTimersUsed; i++) {
-      typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      GlobalTimerLoopIntervals[i] = typeBuffer.uint32;
-    }
-    for (int i = 0; i < nGlobalCountersUsed; i++) {
-      typeBuffer.byteArray[0] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[1] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[2] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      typeBuffer.byteArray[3] = StateMatrixBuffer[bufferPos]; bufferPos++;
-      GlobalCounterThresholds[i] = typeBuffer.uint32;
+    if (nGlobalCountersUsed > 0) {
+      memcpy(GlobalCounterThresholds, &StateMatrixBuffer[bufferPos], nGlobalCountersUsed*sizeof(GlobalCounterThresholds[0]));
+      bufferPos += 4*nGlobalCountersUsed;
     }
     byte containsAdditionalOps = StateMatrixBuffer[bufferPos]; bufferPos++; // New for firmware r23 - certain additional ops can be packaged with the state machine description
     boolean clearedSerialMessageLibrary = false;
@@ -2867,7 +2795,6 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
       }
       containsAdditionalOps = StateMatrixBuffer[bufferPos]; bufferPos++;
     }
-    
   #else // Bpod 0.5; Read state matrix from serial port
     for (int x = 0; x < nStates; x++) { // Get State timer matrix
       StateTimerMatrix[x] = PC.readByte();
@@ -3022,6 +2949,9 @@ void startSM() {
       } else {
         PC.writeByte(0);
       }
+      #if MACHINE_TYPE > 2
+        Serial.send_now();
+      #endif
       newSMATransmissionStarted = false;
   }
   updateStatusLED(3);
