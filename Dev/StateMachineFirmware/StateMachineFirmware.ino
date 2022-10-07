@@ -44,7 +44,7 @@
 // FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
 #define MACHINE_TYPE 3
-#define MACHINE_BUILD 1
+#define MACHINE_BUILD 0
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -83,7 +83,7 @@
 // Current firmware version (single firmware file, compiles for MachineTypes set above).
 
 #define FIRMWARE_VERSION_MAJOR 23 // Incremented with each stable release (master branch)
-#define FIRMWARE_VERSION_MINOR 9 // Incremented with each push on develop branch
+#define FIRMWARE_VERSION_MINOR 10 // Incremented with each push on develop branch
 
 //////////////////////////////////////////
 //      Live Timestamp Transmission      /

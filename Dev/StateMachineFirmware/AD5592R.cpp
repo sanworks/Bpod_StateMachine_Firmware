@@ -48,11 +48,14 @@ AD5592R::AD5592R(byte ChipSelect, byte TheBusyPin) {
   registerBuffer.uint8[0] = B00110000;
   writeRegister();
 
-  // Set all pins as High Z (Tri-State)
-  registerBuffer.uint8[1] = B01101000;
-  registerBuffer.uint8[0] = B01111111;
-  writeRegister();
+  // Set all pins (except for busy pin) as High Z (Tri-State) by configuring them as powered down DACs
   isHighZ = B01111111;
+  registerBuffer.uint8[1] = B01011010; // Power down all channels configured HighZ if configured as DAC
+  registerBuffer.uint8[0] = isHighZ;
+  writeRegister();
+  registerBuffer.uint8[1] = B00101000; // Configure channels as DAC
+  registerBuffer.uint8[0] = isHighZ;
+  writeRegister();
 
   // Set pin 7 to act as ADC busy pin
   isDO = B10000000;
@@ -196,12 +199,18 @@ void AD5592R::updateChannelTypes() {
   registerBuffer.uint8[0] = isADC;
   writeRegister();
   // Set DAC outputs
+  registerBuffer.uint8[1] = B01011010; // Power up all channels not configured HighZ
+  registerBuffer.uint8[0] = isHighZ;
+  writeRegister();
   registerBuffer.uint8[1] = B00101000;
   registerBuffer.uint8[0] = isDAC;
   writeRegister();
   // Set High-Z channels
-  registerBuffer.uint8[1] = B01101000;
+  registerBuffer.uint8[1] = B01011010; // Power down all HighZ channels to achieve tri-state when configured as DAC
   registerBuffer.uint8[0] = isHighZ;
+  writeRegister();
+  registerBuffer.uint8[1] = B00101000; // Configure tri-state channels (and DAC channels) as DAC
+  registerBuffer.uint8[0] = isHighZ | isDAC;
   writeRegister();
   nDAC = 0; nADC = 0; nDO = 0; nDI = 0; nHighZ = 0;
   
