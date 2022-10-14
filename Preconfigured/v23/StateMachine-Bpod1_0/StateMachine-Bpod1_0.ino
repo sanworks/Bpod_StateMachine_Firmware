@@ -43,7 +43,7 @@
 // FSM 2.5:     MACHINE_TYPE 3, MACHINE_BUILD 1
 // FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
-#define MACHINE_TYPE 4
+#define MACHINE_TYPE 2
 #define MACHINE_BUILD 0
 
 //////////////////////////////////////////
@@ -57,7 +57,7 @@
 // 2 = Bpod for BControl on HW 0.7-1.0 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 2.0-2.3 (20,2,20)
 
-#define SM_FEATURE_PROFILE 1
+#define SM_FEATURE_PROFILE 0
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5

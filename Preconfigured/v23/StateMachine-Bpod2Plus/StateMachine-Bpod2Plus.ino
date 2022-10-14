@@ -43,7 +43,7 @@
 // FSM 2.5:     MACHINE_TYPE 3, MACHINE_BUILD 1
 // FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
-#define MACHINE_TYPE 4
+#define MACHINE_TYPE 3
 #define MACHINE_BUILD 0
 
 //////////////////////////////////////////
