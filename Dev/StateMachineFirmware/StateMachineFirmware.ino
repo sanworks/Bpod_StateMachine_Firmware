@@ -700,6 +700,7 @@ void setup() {
   
   SPI.begin();
   #if MACHINE_TYPE == 4
+    FlexIO.init();
     FlexIO.nReadsPerMeasurement = 3; // Configure 3x oversampling for analog inputs by default
     setFlexIOChannelTypes();
     memory_begin = (uint32_t *)(0x70000000); // PSRAM start address

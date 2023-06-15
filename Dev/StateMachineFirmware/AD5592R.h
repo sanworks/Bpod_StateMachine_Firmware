@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 class AD5592R{
   public:
     AD5592R(byte ChipSelect, byte BusyPin); // Constructor
+    void init();
     void writeDAC(byte channel, uint16_t value); // Convert to setDAC() for LDAC operation
     void setChannelType(byte channel, byte type);
     void updateChannelTypes();
@@ -46,8 +47,8 @@ class AD5592R{
     void readADC(); // Reads analog input channels and stores results in adcReadout
 
   private:
-    byte CSPin;
-    byte BusyPin;
+    byte CSPin = 0;
+    byte BusyPin = 0;
     byte isDAC = 0; // Bits indicate whether each I/O channel is configured as a DAC
     byte isADC = 0; // Bits indicate whether each I/O channel is configured as an ADC
     byte isDO = 0; // Bits indicate whether each I/O channel is configured as a TTL output
@@ -58,5 +59,5 @@ class AD5592R{
       uint16_t uint16[1];
     } registerBuffer;
     void writeRegister();
-    uint16_t readRegister();
+    void readRegister();
 };

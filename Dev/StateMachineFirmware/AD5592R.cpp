@@ -28,6 +28,9 @@ int SPI_speed = 20000000; // 20MHz can be used for ADC reads, clocking data from
 AD5592R::AD5592R(byte ChipSelect, byte TheBusyPin) {
   CSPin = ChipSelect;
   BusyPin = TheBusyPin;
+}
+
+void AD5592R::init() {
   pinMode(CSPin, OUTPUT);
   digitalWrite(CSPin, HIGH);
   pinMode(BusyPin, INPUT);
@@ -246,7 +249,7 @@ void AD5592R::writeRegister() {
   #endif
 }
 
-uint16_t AD5592R::readRegister() {
+void AD5592R::readRegister() {
   #if defined(TEENSYDUINO) 
     SPI.beginTransaction(SPISettings(SPI_speed, MSBFIRST, SPI_MODE2));
     digitalWriteFast(CSPin, LOW);
