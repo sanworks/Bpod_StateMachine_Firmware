@@ -43,8 +43,12 @@
 // FSM 2.5:     MACHINE_TYPE 3, MACHINE_BUILD 1
 // FSM 2+ r1.0: MACHINE_TYPE 4, MACHINE_BUILD 0
 
+#ifndef MACHINE_TYPE
 #define MACHINE_TYPE 4
+#endif
+#ifndef MACHINE_BUILD
 #define MACHINE_BUILD 0
+#endif
 
 //////////////////////////////////////////
 //    State Machine Feature Profile      /
@@ -57,7 +61,9 @@
 // 2 = Bpod for BControl on HW 0.7-1.0 (8,2,8) 
 // 3 = Bpod for Bcontrol on HW 2.0-2.3 (20,2,20)
 
+#ifndef SM_FEATURE_PROFILE
 #define SM_FEATURE_PROFILE 1
+#endif
 
 #if SM_FEATURE_PROFILE == 0
   #define MAX_GLOBAL_TIMERS 5
@@ -106,6 +112,9 @@
 
 #if MACHINE_TYPE < 3
   #include "DueTimer.h"
+  #if PWM_FREQUENCY != 50000 || TC_FREQUENCY != 50000
+    #error Error! PWM_FREQUENCY and TC_FREQUENCY must be set to 50000 in the Arduino Due core file variant.h (see SYSTEM SETUP above).
+  #endif
 #endif
 #include <SPI.h>
 #include "ArCOM.h" // ArCOM is a serial interface wrapper developed by Sanworks, 
@@ -355,6 +364,7 @@ byte SyncRegisterLatch = 23;
   extern "C" uint8_t external_psram_size;
   uint32_t *memory_begin, *memory_end;
   boolean memOK = false;
+  bool check_fixed_pattern(uint32_t pattern); // Declared here for PlatformIO, which does not auto-generate prototypes for indented functions
 #endif
 
 // Settings for version-specific hardware (initialized in setup)
