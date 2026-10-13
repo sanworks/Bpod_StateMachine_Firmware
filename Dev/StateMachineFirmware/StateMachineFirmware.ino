@@ -920,7 +920,7 @@ void handler() { // This is the timer handler function, which is called every (t
   if (runFlag) { // If an SM run command was delayed because an SM transmission is ongoing
     if (smaTransmissionConfirmed) {
       runFlag = false;
-      startFlag == true;
+      startFlag = true;
     }
   }
   if (getModuleInfo) { // If a request was sent for connected modules to return self description (request = byte 255)
