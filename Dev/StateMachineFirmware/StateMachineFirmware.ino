@@ -1391,6 +1391,15 @@ void handler() { // This is the timer handler function, which is called every (t
     if (firstLoop == 1) { 
       firstLoop = 0;
       #if MACHINE_TYPE == 4
+        if (FlexIO.nDI > 0) { // Start Flex digital inputs from their actual level (before outputs are set, as in every cycle)
+          FlexIO.readDI();
+          for (int i = 0; i < nFlexIO; i++) {
+            if ((flexIOChannelType[i] == 0) && inputEnabled[i+FlexInputPos]) {
+              inputState[i+FlexInputPos] = FlexIO.getDI(i);
+              lastInputState[i+FlexInputPos] = inputState[i+FlexInputPos];
+            }
+          }
+        }
         if (!flexIO_updateAIflag) {
           delayMicroseconds(1); // Delay so that the i/o + timing matches subsequent loops (which include ~1us of processing first)
         }
@@ -2997,7 +3006,7 @@ void startSM() {
     inputOverrideState[i] = false;
   }
   #if MACHINE_TYPE == 4
-    for (int i = FlexInputPos; i < FlexInputPos+nFlexIO; i++) { // Todo: Mod to read any digital inputs
+    for (int i = FlexInputPos; i < FlexInputPos+nFlexIO; i++) { // Flex digital inputs are read in the trial's first cycle (see handler())
       inputState[i] = logicLow[i];
       lastInputState[i] = logicLow[i];
     }
