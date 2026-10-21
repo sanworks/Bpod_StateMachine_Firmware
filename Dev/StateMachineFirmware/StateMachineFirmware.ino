@@ -2611,6 +2611,10 @@ void loadStateMatrix() { // Loads a state matrix from the serial buffer into the
   memset(smGlobalTimerTrig, 0, sizeof(smGlobalTimerTrig[0]) * nStates);
   memset(smGlobalTimerCancel, 0, sizeof(smGlobalTimerCancel[0]) * nStates);
   memset(smGlobalCounterReset, 0, sizeof(smGlobalCounterReset[0]) * nStates);
+  #if MACHINE_TYPE == 4
+    memset(analogThreshEnable, 0, sizeof(analogThreshEnable[0]) * nStates);
+    memset(analogThreshDisable, 0, sizeof(analogThreshDisable[0]) * nStates);
+  #endif
   memset(StateTimerMatrix, 0, sizeof(StateTimerMatrix[0]) * nStates);
   memset(OutputStateMatrix, 0, sizeof(OutputStateMatrix[0][0]) * OutputMatrixSize * nStates);
   for (byte x = 0; x < nStates; x++) { // Reset matrix to default
