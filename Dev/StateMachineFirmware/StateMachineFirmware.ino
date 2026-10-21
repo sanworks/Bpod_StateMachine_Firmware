@@ -2050,6 +2050,7 @@ void setStateOutputs(byte State) {
           if (outputOverrideState[i] == 0) {
             digitalWriteDirect(OutputCh[i], OutputStateMatrix[State][i]); 
           }
+        break;
         case 'V':
           if (outputOverrideState[i] == 0) {
             if (usesSPIValves) {
