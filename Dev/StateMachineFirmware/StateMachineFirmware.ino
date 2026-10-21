@@ -447,7 +447,6 @@ byte previousState = 0; // Previous state visited. Used if 255 is interpreted as
 int LEDBrightnessAdjustInterval = 5;
 byte LEDBrightnessAdjustDirection = 1;
 byte LEDBrightness = 0;
-byte serialByteBuffer[4] = {0}; // Stores 1-3 byte messages transmitted as output actions of states
 
 // Vars for state machine definitions. Each matrix relates each state to some inputs or outputs.
 const byte InputMatrixSize = maxSerialEvents + (nDigitalInputs*2);
@@ -475,6 +474,7 @@ boolean GlobalTimersActive[MAX_GLOBAL_TIMERS] = {0}; // 0 if timer x is inactive
 #else
   const byte SerialMessageMaxBytes = 5;
 #endif
+byte serialByteBuffer[SerialMessageMaxBytes] = {0}; // Stores serial messages transmitted as output actions of states, and other short messages to the PC (at least 3 bytes)
 byte SerialMessageMatrix[MaxStates+1][nSerialChannels][SerialMessageMaxBytes]; // Stores a 5-byte serial message for each message byte on each port
 byte SerialMessage_nBytes[MaxStates+1][nSerialChannels] = {1}; // Stores the length of each serial message
 boolean ModuleConnected[nSerialChannels] = {false}; // true for each channel if a module is connected, false otherwise
