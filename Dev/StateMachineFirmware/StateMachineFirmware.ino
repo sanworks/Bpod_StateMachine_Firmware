@@ -2492,8 +2492,8 @@ void relayModuleInfo(ArCOM serialCOM, byte moduleID) {
 }
 
 void disableModuleRelays() {
-  for (int i = 0; i < nSerialChannels; i++) { // Shut off all other channels
-    UARTrelayMode[Byte1] = false;
+  for (int i = 0; i < nSerialChannels; i++) { // Shut off all channels
+    UARTrelayMode[i] = false;
   }
 }
 
