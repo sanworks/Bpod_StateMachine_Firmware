@@ -1656,12 +1656,6 @@ void handler() { // This is the timer handler function, which is called every (t
             CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
             GlobalCounterHandled[x] = true;
           }
-          // Add current event to count (Crossing triggered on next cycle)
-          for (int i = 0; i < nCurrentEvents; i++) {
-            if (CurrentEvent[i] == GlobalCounterAttachedEvents[x]) {
-              GlobalCounterCounts[x] = GlobalCounterCounts[x] + 1;
-            }
-          }
         }
         Ev++;
       }
@@ -1673,6 +1667,16 @@ void handler() { // This is the timer handler function, which is called every (t
       }
       if (nCurrentEvents > maxCurrentEvents) { // Drop events beyond maxCurrentEvents
         nCurrentEvents = maxCurrentEvents;
+      }
+      // Add current events to global counts (Crossing triggered on next cycle). Counted last, so that counters see exactly the events that are reported, including Tup and all threshold events
+      for (int x = 0; x < nGlobalCountersUsed; x++) {
+        if (GlobalCounterAttachedEvents[x] < 254) {
+          for (int i = 0; i < nCurrentEvents; i++) {
+            if (CurrentEvent[i] == GlobalCounterAttachedEvents[x]) {
+              GlobalCounterCounts[x] = GlobalCounterCounts[x] + 1;
+            }
+          }
+        }
       }
       // Now determine if a state transition should occur. The first event linked to a state transition takes priority.
       byte StateTransitionFound = 0; int i = 0; int CurrentColumn = 0;
