@@ -1528,7 +1528,7 @@ void handler() { // This is the timer handler function, which is called every (t
               case 0:
                 if (Module1.available() > 0) {
                   Byte2 = Module1.readByte();
-                  if (Byte2 <= nModuleEvents[0]) {
+                  if ((Byte2 > 0) && (Byte2 <= nModuleEvents[0])) {
                     CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                   }
                 }
@@ -1537,7 +1537,7 @@ void handler() { // This is the timer handler function, which is called every (t
               case 1:
                 if (Module2.available() > 0) {
                   Byte2 = Module2.readByte();
-                  if (Byte2 <= nModuleEvents[1]) {
+                  if ((Byte2 > 0) && (Byte2 <= nModuleEvents[1])) {
                     CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                   }
                 }
@@ -1547,7 +1547,7 @@ void handler() { // This is the timer handler function, which is called every (t
                 #if MACHINE_TYPE > 1
                   if (Module3.available() > 0) {
                     Byte2 = Module3.readByte();
-                    if (Byte2 <= nModuleEvents[2]) {
+                    if ((Byte2 > 0) && (Byte2 <= nModuleEvents[2])) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
                   }
@@ -1558,7 +1558,7 @@ void handler() { // This is the timer handler function, which is called every (t
                 #if MACHINE_TYPE == 3
                   if (Module4.available() > 0) {
                     Byte2 = Module4.readByte();
-                    if (Byte2 <= nModuleEvents[3]) {
+                    if ((Byte2 > 0) && (Byte2 <= nModuleEvents[3])) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
                   }
@@ -1569,7 +1569,7 @@ void handler() { // This is the timer handler function, which is called every (t
                 #if MACHINE_TYPE == 3 && ETHERNET_COM == 0
                   if (Module5.available() > 0) {
                     Byte2 = Module5.readByte();
-                    if (Byte2 <= nModuleEvents[4]) {
+                    if ((Byte2 > 0) && (Byte2 <= nModuleEvents[4])) {
                       CurrentEvent[nCurrentEvents] = Byte2 + Ev-1; nCurrentEvents++; 
                     }
                   }
