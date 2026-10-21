@@ -580,8 +580,8 @@ byte ModuleProbeBytes[2] = {255,255};
 
 #if MACHINE_TYPE == 4
   // Analog Input Threshold Vars
-  uint16_t analogThreshold1[nFlexIO] = {4095}; // Analog value of threshold# 1
-  uint16_t analogThreshold2[nFlexIO] = {4095}; // Analog value of threshold# 2
+  uint16_t analogThreshold1[nFlexIO] = {0}; // Analog value of threshold# 1 (4095 until set by the host, see setup())
+  uint16_t analogThreshold2[nFlexIO] = {0}; // Analog value of threshold# 2
   byte analogThreshold1Polarity[nFlexIO] = {0}; // 0: Trig if val > T, 1: Trig if val < T
   byte analogThreshold2Polarity[nFlexIO] = {0}; 
   byte analogThreshold1Enabled[nFlexIO] = {0}; // Only enabled thresholds generate events. Thresholds are disabled after being triggered.
@@ -702,6 +702,10 @@ void setup() {
   #if MACHINE_TYPE == 4
     FlexIO.init();
     FlexIO.nReadsPerMeasurement = 3; // Configure 3x oversampling for analog inputs by default
+    for (int i = 0; i < nFlexIO; i++) { // Default thresholds at full scale, so that they cannot be crossed until the host sets them
+      analogThreshold1[i] = 4095;
+      analogThreshold2[i] = 4095;
+    }
     setFlexIOChannelTypes();
     memory_begin = (uint32_t *)(0x70000000); // PSRAM start address
     memory_end = (uint32_t *)(0x70000000 + external_psram_size * 1048576); // PSRAM end address
