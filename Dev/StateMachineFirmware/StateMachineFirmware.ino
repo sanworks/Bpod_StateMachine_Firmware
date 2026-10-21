@@ -3000,6 +3000,7 @@ void startSM() {
     for (int i = FlexInputPos; i < FlexInputPos+nFlexIO; i++) { // Todo: Mod to read any digital inputs
       inputState[i] = logicLow[i];
       lastInputState[i] = logicLow[i];
+      inputOverrideState[i] = false;
     }
   #endif
   
