@@ -2199,7 +2199,7 @@ uint64_t sessionTimeMicros() {
    #else
     currentTimeMicros = micros();
    #endif
-   sessionTime = ((uint64_t)currentTimeMicros + ((uint64_t)nMicrosRollovers*4294967295)) - sessionStartTimeMicros;
+   sessionTime = ((uint64_t)currentTimeMicros + ((uint64_t)nMicrosRollovers << 32)) - sessionStartTimeMicros; // The 32-bit microsecond counter wraps every 2^32 us
    return sessionTime;
 }
 
