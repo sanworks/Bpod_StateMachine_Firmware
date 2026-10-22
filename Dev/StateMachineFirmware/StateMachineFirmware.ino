@@ -2067,16 +2067,18 @@ void setStateOutputs(byte State) {
         break;
         #if MACHINE_TYPE == 4
           case 'F':
-            switch (flexIOChannelType[OutputCh[i]]) {
-              case 1: // Digital output
-                FlexIO.setDO(OutputCh[i], OutputStateMatrix[State][i]);
-                flexIO_updateDOflag = true;
-              break;
-              case 3: // Analog output
-                // Set values
-                flexIOValues[OutputCh[i]] = OutputStateMatrix[State][i];
-                flexIO_updateAOflag = true;
-              break;
+            if (outputOverrideState[i] == 0) {
+              switch (flexIOChannelType[OutputCh[i]]) {
+                case 1: // Digital output
+                  FlexIO.setDO(OutputCh[i], OutputStateMatrix[State][i]);
+                  flexIO_updateDOflag = true;
+                break;
+                case 3: // Analog output
+                  // Set values
+                  flexIOValues[OutputCh[i]] = OutputStateMatrix[State][i];
+                  flexIO_updateAOflag = true;
+                break;
+              }
             }
           break;
         #endif
@@ -2163,6 +2165,9 @@ void resetOutputs() {
       case 'P':
         pwmWrite(OutputCh[i], 0); 
         outputOverrideState[i] = 0; 
+      break;
+      case 'F': // Flex I/O: values are reset below
+        outputOverrideState[i] = 0;
       break;
     }
   }
