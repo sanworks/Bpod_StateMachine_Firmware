@@ -428,6 +428,7 @@ boolean UARTrelayMode[nSerialChannels] = {false};
 byte nModuleEvents[nSerialChannels] = {0}; // Stores number of behavior events assigned to each serial module (15 by default)
 uint16_t stateMatrixNBytes = 0; // Number of bytes in the state matrix about to be transmitted
 boolean using255BackSignal = 0; // If enabled, only 254 states can be used and going to "state 255" returns system to the previous state
+boolean newUsing255BackSignal = 0; // using255BackSignal of the most recently received state matrix; copied in loadStateMatrix() so that a running trial is unaffected
 
 
 //////////////////////////////////
@@ -1321,24 +1322,26 @@ void handler() { // This is the timer handler function, which is called every (t
             SoftEvent1 = 255; // 255 = No Event
           }
       break;
-      case 'C': // Get new compressed state matrix from MATLAB/Python 
+      case 'C': { // Get new compressed state matrix from MATLAB/Python 
         newSMATransmissionStarted = true;
         smaTransmissionConfirmed = false;
         PC.readByteArray(typeBuffer.byteArray, 4);
         RunStateMatrixASAP = typeBuffer.byteArray[0];
-        using255BackSignal = typeBuffer.byteArray[1];
+        byte receivedBackSignal = typeBuffer.byteArray[1]; // Stored below only if the state matrix is accepted, so that a rejected one cannot change the flag of a state matrix waiting to be loaded
         typeBuffer.byteArray[0] = typeBuffer.byteArray[2];
         typeBuffer.byteArray[1] = typeBuffer.byteArray[3];
         stateMatrixNBytes = typeBuffer.uint16;
         if (stateMatrixNBytes < StateMatrixBufferSize) {
           if (RunningStateMatrix) {
             #if MACHINE_TYPE > 1
+              newUsing255BackSignal = receivedBackSignal;
               nSMBytesRead = 0;
               smaPending = true;
             #else
               PC.writeByte(0);
             #endif
           } else {
+            newUsing255BackSignal = receivedBackSignal;
             #if TEENSY_VERSION == 4
               nSMBytesRead = 0;
               smaPending = true;
@@ -1355,7 +1358,7 @@ void handler() { // This is the timer handler function, which is called every (t
             #endif
           }
         }
-      break;
+      } break;
       case 'R':  // Run State Machine
         startFlag = true;
       break;
@@ -2596,6 +2599,7 @@ void clearSerialBuffers() {
 }
 
 void loadStateMatrix() { // Loads a state matrix from the serial buffer into the relevant local variables
+  using255BackSignal = newUsing255BackSignal;
   #if MACHINE_TYPE > 1
     nStates = StateMatrixBuffer[0];
     nGlobalTimersUsed = StateMatrixBuffer[1];
