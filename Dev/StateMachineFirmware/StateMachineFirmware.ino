@@ -903,18 +903,14 @@ void handler() { // This is the timer handler function, which is called every (t
     lastTimeMicros = currentTimeMicros; 
   #endif
   if (connectionState == 0) { // If not connected to Bpod software
-    if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte to any connected USB serial port
-      #if ETHERNET_COM == 0
-        #if MACHINE_TYPE > 2
-          PC.writeByte(discoveryByte);
-        #else
-          if (SerialUSB.dtr()) {
-            PC.writeByte(discoveryByte);
-          }
-        #endif
-      #endif
-      DiscoveryByteTime = millis();
-    }
+    #if ETHERNET_COM == 0
+      if (!SerialUSB.dtr()) { // If no program has the USB serial port open
+        DiscoveryByteTime = millis() - discoveryByteInterval - 1; // Backdate, so a discovery byte is sent as soon as the port is opened
+      } else if (millis() - DiscoveryByteTime > discoveryByteInterval) { // At a fixed interval, send discovery byte
+        PC.writeByte(discoveryByte);
+        DiscoveryByteTime = millis();
+      }
+    #endif
     updateStatusLED(1); // Update the indicator LED (cycles blue intensity)
   }
   if (runFlag) { // If an SM run command was delayed because an SM transmission is ongoing
