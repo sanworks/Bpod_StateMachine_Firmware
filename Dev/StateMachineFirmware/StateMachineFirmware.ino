@@ -980,6 +980,9 @@ void handler() { // This is the timer handler function, which is called every (t
         resetSessionClock();
         trialCounter = 0;
         PC.writeByte(1);
+        #if MACHINE_TYPE > 2
+          Serial.send_now(); // Send the acknowledgement immediately, so that the host can relate the reset to its own clock
+        #endif
       break;
       case ':': // Enable/Disable status LED
         statusLEDEnabled = PC.readByte();
