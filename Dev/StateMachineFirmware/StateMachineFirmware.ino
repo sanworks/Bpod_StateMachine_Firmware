@@ -947,8 +947,7 @@ void handler() { // This is the timer handler function, which is called every (t
         connectionState = 1;
         updateStatusLED(2);
         PC.writeByte(53);
-        delayMicroseconds(100000);
-        PC.flush();
+        PC.flush(); // Send the reply immediately
         resetSessionClock();
         resetSerialMessages();
         disableModuleRelays();
