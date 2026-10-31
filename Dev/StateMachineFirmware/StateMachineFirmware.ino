@@ -847,6 +847,9 @@ void setup() {
   hardwareRevision = 0;
   for (int i = 0; i < 5; i++) {
     pinMode(hardwareRevisionArray[i], INPUT_PULLUP);
+  }
+  delayMicroseconds(100); // Let the pull-ups charge the floating pins before reading them
+  for (int i = 0; i < 5; i++) {
     hardwareRevision += pow(2, i)*digitalRead(hardwareRevisionArray[i]);
     pinMode(hardwareRevisionArray[i], INPUT);
   }
