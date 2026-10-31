@@ -172,6 +172,21 @@
   ArCOM Module3(Serial6);
 #endif
 
+#if MACHINE_TYPE > 2
+  // On Teensy 4, usb_serial2_write() can be interrupted by its own flush timer, which runs in the USB interrupt and corrupts the write
+  // (fixed by PaulStoffregen/cores#805). The USB interrupt can preempt handler(), so it is masked while writing to SerialUSB1.
+  void writePC1(byte value) {
+    #if defined(__IMXRT1062__)
+      NVIC_DISABLE_IRQ(IRQ_USB1);
+      asm volatile("dsb\n\tisb" ::: "memory"); // Make sure the interrupt is masked before writing
+      PC1.writeByte(value);
+      NVIC_ENABLE_IRQ(IRQ_USB1);
+    #else
+      PC1.writeByte(value);
+    #endif
+  }
+#endif
+
 ////////////////////////////////////////
 // State machine hardware description  /
 ////////////////////////////////////////
@@ -857,6 +872,9 @@ void setup() {
     Timer3.attachInterrupt(handler); // Timer3 is Arduino Due's hardware timer, which will trigger the function "handler" precisely every (timerPeriod) us
     Timer3.start(timerPeriod); // Start HW timer
   #else
+    #if defined(__IMXRT1062__)
+      NVIC_SET_PRIORITY(IRQ_USB1, 112); // Let USB interrupts preempt the timer handler (as on Teensy 3.6), so that blocking reads in handler() can receive further bytes
+    #endif
     hardwareTimer.begin(handler, timerPeriod); // hardwareTimer is Teensy 3.6's hardware timer
   #endif
 }
@@ -968,7 +986,7 @@ void handler() { // This is the timer handler function, which is called every (t
       break;
       case '{': // Send handshake response byte on SerialUSB1 (used for soft codes from a third-party app (e.g. Bonsai))
         #if MACHINE_TYPE > 2
-          PC1.writeByte(222);
+          writePC1(222);
         #endif
       break;
       case '}': // Send handshake response byte on SerialUSB2 (used for analog data)
@@ -2039,7 +2057,7 @@ void setStateOutputs(byte State) {
         case 'Z':
           #if MACHINE_TYPE > 2
             if (OutputStateMatrix[State][i] > 0) {
-              PC1.writeByte(OutputStateMatrix[State][i]);
+              writePC1(OutputStateMatrix[State][i]);
             }
           #endif
           thisChannel++;
@@ -2362,7 +2380,7 @@ void setGlobalTimerChannel(byte timerChan, byte op) {
         } else {
           thisMessage = GlobalTimerOffMessage[timerChan];
         }
-        PC1.writeByte(thisMessage);
+        writePC1(thisMessage);
       #endif
     break;
     case 'B': // Digital IO (BNC, Wire, Digital, Valve-line)
