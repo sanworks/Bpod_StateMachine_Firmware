@@ -2553,43 +2553,44 @@ void relayModuleBytes() {
 }
 
 void clearSerialBuffers() {
-  Byte1 = 0;
+  byte moduleIndex = 0; // Index of the current module port
   for (int i = 0; i < BNCInputPos; i++) {
       switch (InputHW[i]) {
         case 'U': 
-            switch(Byte1) {
+            switch(moduleIndex) {
               case 0:
                 while (Module1.available() > 0) {
-                  Module1.readByte(); Byte1++;
+                  Module1.readByte();
                 }
               break;
               case 1:
                 while (Module2.available() > 0) {
-                  Module2.readByte(); Byte1++;
+                  Module2.readByte();
                 }
               break;
               #if MACHINE_TYPE > 1
                 case 2:
                   while (Module3.available() > 0) {
-                    Module3.readByte(); Byte1++;
+                    Module3.readByte();
                   }
                 break;
               #endif
               #if MACHINE_TYPE == 3
                 case 3:
                   while (Module4.available() > 0) {
-                    Module4.readByte(); Byte1++;
+                    Module4.readByte();
                   }
                 break;
                 #if ETHERNET_COM == 0
                   case 4:
                     while (Module5.available() > 0) {
-                      Module5.readByte(); Byte1++;
+                      Module5.readByte();
                     }
                   break;
                 #endif
               #endif
             }
+            moduleIndex++;
        break;
      }
   }
