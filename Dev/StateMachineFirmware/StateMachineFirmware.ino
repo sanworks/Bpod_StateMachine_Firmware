@@ -2214,6 +2214,7 @@ void resetSessionClock() {
     nMicrosRollovers = 0;
     #if MACHINE_TYPE == 4
       firstTrialFlag = true;
+      acquiringAnalog = false; // Sampling restarts with the first trial, at t = 0
     #endif
 }
 
