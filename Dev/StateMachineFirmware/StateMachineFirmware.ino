@@ -1619,7 +1619,9 @@ void handler() { // This is the timer handler function, which is called every (t
                 }
               }
             } else {
-              CurrentEvent[nCurrentEvents] = Ev+MAX_GLOBAL_TIMERS; nCurrentEvents++;
+              if (SendGlobalTimerEvents[i]) {
+                CurrentEvent[nCurrentEvents] = Ev+MAX_GLOBAL_TIMERS; nCurrentEvents++;
+              }
             }
           }
         } else if (GlobalTimersTriggered[i] == true) {
@@ -1630,7 +1632,9 @@ void handler() { // This is the timer handler function, which is called every (t
                 CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
               }
             } else {
-              CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+              if (SendGlobalTimerEvents[i]) {
+                CurrentEvent[nCurrentEvents] = Ev; nCurrentEvents++;
+              }
             }
             if (GlobalTimerOnsetTriggers[i] > 0) {
               for (int j = 0; j < nGlobalTimersUsed; j++) {
@@ -1974,7 +1978,9 @@ void setStateOutputs(byte State) {
           GlobalTimersTriggered[i] = false;
           GlobalTimersActive[i] = false;
           setGlobalTimerChannel(i, 0);
-          CurrentEvent[nCurrentEvents] = i+GlobalTimerEndPos; nCurrentEvents++;
+          if (SendGlobalTimerEvents[i]) {
+            CurrentEvent[nCurrentEvents] = i+GlobalTimerEndPos; nCurrentEvents++;
+          }
         } else if (GlobalTimersTriggered[i]) {
           GlobalTimersTriggered[i] = false;
         }
@@ -2141,7 +2147,9 @@ void triggerGlobalTimer(byte timerID) {
           }
         }
       }
-      CurrentEvent[nCurrentEvents] = timerID+GlobalTimerStartPos; nCurrentEvents++;
+      if (SendGlobalTimerEvents[timerID]) {
+        CurrentEvent[nCurrentEvents] = timerID+GlobalTimerStartPos; nCurrentEvents++;
+      }
     }
   }
   GlobalTimerEnd[timerID] = GlobalTimerStart[timerID] + GlobalTimers[timerID];
