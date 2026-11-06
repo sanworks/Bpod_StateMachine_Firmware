@@ -113,6 +113,12 @@
 #if ETHERNET_COM == 1
   #include "ArCOMvE.h" // Special variant of ArCOM specialized for transmission via Bpod Ethernet module
 #endif
+#if defined(__IMXRT1062__) && ETHERNET_COM == 0
+  #include "UsbTxQueue.h" // Teensy 4: writes to the PC are queued, so that handler() never waits for the host
+  #define USB_TX_QUEUE 1
+#else
+  #define USB_TX_QUEUE 0
+#endif
 
 #if MACHINE_TYPE == 4
   #include "AD5592R.h" // Library for the AD5592R Analog + Digital interface IC, used for FlexI/O channels
@@ -132,7 +138,12 @@
     #error Error! You must choose 'Dual Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
   #endif
   #if ETHERNET_COM == 0 
-    ArCOM PC(SerialUSB);
+    #if USB_TX_QUEUE
+      UsbTxQueue usbTxQueue(SerialUSB);
+      ArCOM PC(usbTxQueue);
+    #else
+      ArCOM PC(SerialUSB);
+    #endif
     ArCOM PC1(SerialUSB1); 
   #else
     #if MACHINE_BUILD == 0
@@ -164,7 +175,12 @@
   #if !defined(USB_TRIPLE_SERIAL)
     #error Error! You must choose 'Triple Serial' from the 'Tools' > 'USB Type' menu in the Arduino application before uploading this firmware.
   #endif
-  ArCOM PC(SerialUSB);
+  #if USB_TX_QUEUE
+    UsbTxQueue usbTxQueue(SerialUSB);
+    ArCOM PC(usbTxQueue);
+  #else
+    ArCOM PC(SerialUSB);
+  #endif
   ArCOM PC1(SerialUSB1); 
   ArCOM PC2(SerialUSB2);  
   ArCOM Module1(Serial1); 
@@ -1864,6 +1880,9 @@ void handler() { // This is the timer handler function, which is called every (t
       }
     }
   } // End Matrix finished
+  #if USB_TX_QUEUE
+    usbTxQueue.pump(); // Send this cycle's bytes to the PC, as far as USB takes them without waiting
+  #endif
   nCyclesCompleted++;
 } // End timer handler
 
